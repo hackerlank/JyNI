@@ -1,12 +1,16 @@
 /* This File is based on errors.c from CPython 2.7.3 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -65,13 +69,15 @@ extern "C" {
 void
 PyErr_Restore(PyObject *type, PyObject *value, PyObject *traceback)
 {
-	//puts("PyErr_Restore");
-	if (traceback != NULL && !PyTraceBack_Check(traceback)) {
-		/* XXX Should never happen -- fatal error instead? */
-		/* Well, it could be None. */
-		Py_DECREF(traceback);
-		traceback = NULL;
-	}
+//	jputs(__FUNCTION__);
+//	jputsPy(value);
+//	jPrintCStackTrace();
+//	if (traceback != NULL && !PyTraceBack_Check(traceback)) {
+//		/* XXX Should never happen -- fatal error instead? */
+//		/* Well, it could be None. */
+//		Py_DECREF(traceback);
+//		traceback = NULL;
+//	}
 //	env();
 //	jobject oldexc = (*env)->CallStaticObjectMethod(env, JyNIClass, JyErr_GetCurExc, NULL);
 //	jobject jv = JyNI_JythonPyObject_FromPyObject(value);
@@ -112,6 +118,9 @@ PyErr_Restore(PyObject *type, PyObject *value, PyObject *traceback)
 	tstate->curexc_type = type;
 	tstate->curexc_value = value;
 	tstate->curexc_traceback = traceback;
+//	printf("%d\n", __LINE__);
+//	if (value && PyString_Check(value))
+//		puts(PyString_AS_STRING(value));
 
 	Py_XDECREF(oldtype);
 	Py_XDECREF(oldvalue);
@@ -121,9 +130,35 @@ PyErr_Restore(PyObject *type, PyObject *value, PyObject *traceback)
 void
 PyErr_SetObject(PyObject *exception, PyObject *value)
 {
+//	jputs(__FUNCTION__);
+//	jputsPy(value);
+//	puts(value ? PyString_AS_STRING(PyObject_Str(value)) : "NULL-PyObject");
 	Py_XINCREF(exception);
 	Py_XINCREF(value);
 	PyErr_Restore(exception, value, (PyObject *)NULL);
+}
+
+void
+JyErr_SetFromJNIEnv()
+{
+//	jputs(__FUNCTION__);
+	env();
+	if ((*env)->ExceptionCheck(env))
+	{
+		jthrowable exc = (*env)->ExceptionOccurred(env);
+		if ((*env)->IsInstanceOf(env, exc, pyExceptionClass))
+		{
+			PyObject* excType = JyNI_PyObject_FromJythonPyObject(
+					(*env)->GetObjectField(env, exc, pyException_typeField));
+			PyObject* excValue = JyNI_PyObject_FromJythonPyObject(
+					(*env)->GetObjectField(env, exc, pyException_valueField));
+			PyObject* excTraceback = NULL;//JyNI_PyObject_FromJythonPyObject(
+//					(*env)->GetObjectField(env, exc, pyExceptionTracebackField));
+			//todo: Support traceback
+			PyErr_Restore(excType, excValue, excTraceback);
+			(*env)->ExceptionClear(env);
+		}
+	}
 }
 
 void
@@ -135,6 +170,8 @@ PyErr_SetNone(PyObject *exception)
 void
 PyErr_SetString(PyObject *exception, const char *string)
 {
+//	jputs(__FUNCTION__);
+//	jputs(string);
 	PyObject *value = PyString_FromString(string);
 	PyErr_SetObject(exception, value);
 	Py_XDECREF(value);
@@ -144,16 +181,11 @@ PyErr_SetString(PyObject *exception, const char *string)
 PyObject *
 PyErr_Occurred(void)
 {
+//	jputs(__FUNCTION__);
 //	env(NULL);
 //	return JyNI_PyObject_FromJythonPyObject(
 //		(*env)->CallStaticObjectMethod(env, JyNIClass, JyNIPyErr_Occurred));
 	PyThreadState *tstate = PyThreadState_GET();
-	//jputs("got thread state");
-	//jputsLong(tstate);
-
-//	PyObject* res = tstate->curexc_type;
-//	jputs("got result in PyErr_Occurred");
-//	return res;
 	return tstate->curexc_type;
 }
 
@@ -166,9 +198,9 @@ PyErr_GivenExceptionMatches(PyObject *err, PyObject *exc)
 		return 0;
 	}
 	env(-1);
-	jobject pyExc = (*env)->NewObject(env, pyExceptionClass, pyExceptionTypeConstructor,
+	jobject pyExc = (*env)->NewObject(env, pyExceptionClass, pyException_typeConstructor,
 		JyNI_JythonPyObject_FromPyObject(err));
-	return (*env)->CallBooleanMethod(env, pyExc, pyExceptionMatch,
+	return (*env)->CallBooleanMethod(env, pyExc, pyException_match,
 		JyNI_JythonPyObject_FromPyObject(exc));
 
 //	if (PyTuple_Check(exc)) {
@@ -220,7 +252,7 @@ PyErr_ExceptionMatches(PyObject *exc)
 	PyThreadState *tstate = PyThreadState_GET();
 
 	env(-1);
-	return (*env)->CallStaticBooleanMethod(env, JyNIClass, JyNIPyErr_ExceptionMatches,
+	return (*env)->CallStaticBooleanMethod(env, JyNIClass, JyNI_PyErr_ExceptionMatches,
 		JyNI_JythonPyObject_FromPyObject(exc),
 		JyNI_JythonPyObject_FromPyObject(tstate->curexc_type),
 		JyNI_JythonPyObject_FromPyObject(tstate->curexc_value),
@@ -235,19 +267,29 @@ PyErr_ExceptionMatches(PyObject *exc)
 void
 PyErr_NormalizeException(PyObject **exc, PyObject **val, PyObject **tb)
 {
+//	jputs(__FUNCTION__);
 	if (*exc == NULL) {
 		/* There was no exception, so nothing to do. */
 		return;
 	}
+
 	env();
-	jobject pyExc = (*env)->NewObject(env, pyExceptionClass, pyExceptionFullConstructor,
+	jobject pyExc = (*env)->NewObject(env, pyExceptionClass, pyException_fullConstructor,
 		JyNI_JythonPyObject_FromPyObject(*exc),
 		JyNI_JythonPyObject_FromPyObject(*val),
 		JyNI_JythonPyObject_FromPyObject(*tb));
-	(*env)->CallVoidMethod(env, pyExc, pyExceptionNormalize);
-	*exc = JyNI_PyObject_FromJythonPyObject((*env)->GetObjectField(env, pyExc, pyExceptionTypeField));
-	*val = JyNI_PyObject_FromJythonPyObject((*env)->GetObjectField(env, pyExc, pyExceptionValueField));
-	*tb = JyNI_PyObject_FromJythonPyObject((*env)->GetObjectField(env, pyExc, pyExceptionTracebackField));
+//	if (!(*exc)->ob_type) {
+//		puts("exc ob_type is still null");
+//	} else
+//		puts((*exc)->ob_type->tp_name);
+//	jputs("old val:");
+//	if (*val && PyString_CheckExact(*val)) jputs(PyString_AS_STRING(*val));
+//	else jputs("val null");
+	(*env)->CallVoidMethod(env, pyExc, pyException_normalize);
+
+	*exc = JyNI_PyObject_FromJythonPyObject((*env)->GetObjectField(env, pyExc, pyException_typeField));
+	*val = JyNI_PyObject_FromJythonPyObject((*env)->GetObjectField(env, pyExc, pyException_valueField));
+	*tb = JyNI_PyObject_FromJythonPyObject((*env)->GetObjectField(env, pyExc, pyException_tracebackField));
 
 //	PyObject *type = *exc;
 //	PyObject *value = *val;
@@ -351,6 +393,7 @@ PyErr_NormalizeException(PyObject **exc, PyObject **val, PyObject **tb)
 void
 PyErr_Fetch(PyObject **p_type, PyObject **p_value, PyObject **p_traceback)
 {
+//	jputs(__FUNCTION__);
 //	env();
 //	jobject pyExc = (*env)->CallStaticObjectMethod(env, JyNIClass, JyNIPyErr_Fetch);
 //	if (pyExc)
@@ -372,8 +415,15 @@ PyErr_Fetch(PyObject **p_type, PyObject **p_value, PyObject **p_traceback)
 }
 
 void
+_PyErr_Clear(void)
+{
+	PyErr_Clear();
+}
+
+void
 PyErr_Clear(void)
 {
+//	jputs(__FUNCTION__);
 //	env();
 //	(*env)->CallStaticVoidMethod(env, JyNIClass, JyNIPyErr_Clear);
 	PyErr_Restore(NULL, NULL, NULL);
@@ -667,8 +717,8 @@ PyErr_BadInternalCall(void)
 PyObject *
 PyErr_Format(PyObject *exception, const char *format, ...)
 {
-//	puts("PyErr_Format");
-//	puts(format);
+//	jputs(__FUNCTION__);
+//	jputs(format);
 	va_list vargs;
 	PyObject* string;
 
@@ -679,7 +729,7 @@ PyErr_Format(PyObject *exception, const char *format, ...)
 #endif
 
 	string = PyString_FromFormatV(format, vargs);
-//	puts(PyString_AS_STRING(string));
+//	jputs(PyString_AS_STRING(string));
 	PyErr_SetObject(exception, string);
 	Py_XDECREF(string);
 	va_end(vargs);
@@ -758,17 +808,24 @@ PyErr_NewException(char *name, PyObject *base, PyObject *dict)
 //	jputs("PyErrNewException:");
 //	if (name) jputs(name);
 //	else jputs("name is NULL");
-	jobject jres = (*env)->CallStaticObjectMethod(env, pyPyClass, pyPyMakeClass,
+	jobject jres = (*env)->CallStaticObjectMethod(env, pyPyClass, pyPy_makeClass,
 		(*env)->NewStringUTF(env, name), jbases, JyNI_JythonPyObject_FromPyObject(dict));
 	if ((*env)->ExceptionCheck(env))
 	{
-		jputs("Exception on makeClass call:");
+//		jputs("Exception on makeClass call:");
 		jobject exc = (*env)->ExceptionOccurred(env);
-		JyNI_jprintJ(exc);
+//		JyNI_jprintJ(exc);
 		(*env)->ExceptionClear(env);
 	}
+//	jputs(__FUNCTION__);
+//	jputs(name);
+//	JyNI_jprintJ(jres);
+//	JyNI_printJInfo(jres);
 	//result = PyObject_CallFunction((PyObject *)&PyType_Type, "sOO", dot+1, bases, dict);
 	result = JyNI_PyObject_FromJythonPyObject(jres);
+//	jputs("New exception created:");
+//	jputs(name);
+//	jputsLong(PyType_HasFeature(((PyTypeObject*) result)->ob_type, Py_TPFLAGS_HEAPTYPE));
 //	jputs("control name");
 //	jputs(((PyTypeObject*) result)->tp_name);
 
@@ -822,7 +879,7 @@ void
 PyErr_WriteUnraisable(PyObject *obj)
 {
 	env();
-	(*env)->CallStaticVoidMethod(env, JyNIClass, JyNIPyErr_WriteUnraisable,
+	(*env)->CallStaticVoidMethod(env, JyNIClass, JyNI_PyErr_WriteUnraisable,
 		JyNI_JythonPyObject_FromPyObject(obj));
 //	PyObject *f, *t, *v, *tb;
 //	PyErr_Fetch(&t, &v, &tb);
@@ -872,7 +929,7 @@ PyErr_WriteUnraisable(PyObject *obj)
 //	Py_XDECREF(tb);
 }
 
-extern PyObject *PyModule_GetWarningsModule(void);
+//extern PyObject *PyModule_GetWarningsModule(void);
 
 
 /* Set file and line information for the current exception.

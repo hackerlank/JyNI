@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -42,7 +44,7 @@ public class CStubSimpleGCHead extends SimpleGCHead implements PyObjectGCHead {
 
 	@Override
 	public void setPyObject(PyObject object) {
-		//System.out.println("CStubSimpleGCHead.setPyObject: "+handle);//object.getType().getName());
+//		System.out.println("CStubSimpleGCHead.setPyObject: "+System.identityHashCode(this)+" / "+handle+" "+System.identityHashCode(object));//object.getType().getName());
 		this.object = object;
 	}
 
@@ -57,6 +59,8 @@ public class CStubSimpleGCHead extends SimpleGCHead implements PyObjectGCHead {
 //	Object obj = null;
 	@Override
 	protected void finalize() throws Throwable {
+//		System.out.println("CStubSimple finalize "+System.identityHashCode(this)+" "+object+" "+handle+" ("+JyNI.getNativeRefCount(object)+")");
+//		System.out.println(Thread.currentThread().getName());
 		gc.notifyPreFinalization();
 		//System.out.println("CStubSimpleGCHead.finalize "+handle+nt);
 		int result = JyNI.consumeConfirmation(handle);
@@ -84,7 +88,7 @@ public class CStubSimpleGCHead extends SimpleGCHead implements PyObjectGCHead {
 			 * So for now we assume that it is just natural gc-behavior that
 			 * a resurrected object with a direct strong reference (overall
 			 * just weakly reachable though) is kept alive for an additional
-			 * gc-cycle (maybe it has to do with gerneration management etc).
+			 * gc-cycle (maybe it has to do with generation management etc).
 			 * Since specification leaves these details undefined,
 			 * this is still valid behavior and only delays collection by one
 			 * cycle. Weak references hold somewhat longer, but apart from that
@@ -96,9 +100,12 @@ public class CStubSimpleGCHead extends SimpleGCHead implements PyObjectGCHead {
 			JyNI.JyGC_restoreCStubBackend(handle, object, newHead);
 			new JyWeakReferenceGC(newHead);
 			JyNI.CStubRestoreAllReachables(object);
+//			System.out.println("Resurrect CStubSimple "+object);
+//			System.out.println(JyNI.lookupNativeHandle(object)+" ("+JyNI.getNativeRefCount(object)+")");
 			JyReferenceMonitor.notifyResurrect(handle, object);
 		} else if ((result & JyNI.JYNI_GC_CONFIRMED_FLAG) == 0) {
-			System.err.println("JyNI-Warning: Unconfirmed but finalized CStubSimpleGCHead: "+handle);
+// We make this temporarily silent. Todo: Investigate warnings!
+			//System.err.println("JyNI-Warning: Unconfirmed but finalized CStubSimpleGCHead: "+handle);
 			//System.err.println("  "+object1);
 		}
 		//object = null;  //(also makes no difference)

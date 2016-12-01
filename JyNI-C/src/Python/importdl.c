@@ -1,12 +1,16 @@
 /* This File is based on importdl.c from CPython 2.7.3 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -60,7 +64,7 @@ jobject _PyImport_LoadDynamicModuleJy(char *name, char *pathname, FILE *fp)
 	char *lastdot, *shortname, *packagecontext, *oldcontext;
 	dl_funcptr p;
 
-	//The following case is covered on java-side now:
+	//The following case is covered on Java-side now:
 	/*if ((m = _PyImport_FindExtension(name, pathname)) != NULL) {
 		Py_INCREF(m);
 		return m;
@@ -79,7 +83,9 @@ jobject _PyImport_LoadDynamicModuleJy(char *name, char *pathname, FILE *fp)
 	//jputs("got dyn load func");
 	if (PyErr_Occurred())
 	{
-		jputs("PyErrOccured00");
+//		jputs("PyErrOccured00");
+//		PyThreadState *tstate = PyThreadState_GET();
+//		jputs(((PyStringObject*) tstate->curexc_value)->ob_sval);
 		return NULL;
 	}
 	//jputs("error check done");
@@ -94,13 +100,17 @@ jobject _PyImport_LoadDynamicModuleJy(char *name, char *pathname, FILE *fp)
 	//jputs("dyn load func is not NULL");
 	oldcontext = _Py_PackageContext;
 	_Py_PackageContext = packagecontext;
-	//jputs("run dyn load func...");
+//	jputs("run dyn load func...");
+//	jputs(name);
 	(*p)();
-	//jputs("run dyn load func done");
+//	jputs("run dyn load func done");
+//	jputs(name);
 	_Py_PackageContext = oldcontext;
 	if (PyErr_Occurred())
 	{
-		//puts("return NULL because PyErr_Occurred");
+//		jputs("PyErrOccured02");
+//		PyThreadState *tstate = PyThreadState_GET();
+//		jputs(((PyStringObject*) tstate->curexc_value)->ob_sval);
 		return NULL;
 	}
 
@@ -115,7 +125,7 @@ jobject _PyImport_LoadDynamicModuleJy(char *name, char *pathname, FILE *fp)
 			mName
 		);*/
 	env(NULL);
-	m = (*env)->CallStaticObjectMethod(env, JyNIClass, JyNIJyNI_GetModule, (*env)->NewStringUTF(env, name));
+	m = (*env)->CallStaticObjectMethod(env, JyNIClass, JyNI_JyNI_GetModule, (*env)->NewStringUTF(env, name));
 	//puts("retrieved module");
 	if (m == NULL) {
 		//puts("m = NULL");
@@ -128,7 +138,8 @@ jobject _PyImport_LoadDynamicModuleJy(char *name, char *pathname, FILE *fp)
 	// Remember the filename as the __file__ attribute
 	//if (PyModule_AddStringConstant(m, "__file__", pathname) < 0)
 	//puts("adding filename...");
-	if (PyModule_AddStringConstantJy(m, "__file__", pathname) < 0)
+	// Todo: If pathname is NULL set __file__ to PyNone or something.
+	if (pathname && PyModule_AddStringConstantJy(m, "__file__", pathname) < 0)
 		PyErr_Clear(); // Not important enough to report
 	//puts("filename added:");
 	//puts(PyModule_GetFilename(JyNI_PyObject_FromJythonPyObject(m)));
@@ -136,7 +147,7 @@ jobject _PyImport_LoadDynamicModuleJy(char *name, char *pathname, FILE *fp)
 	//if (_PyImport_FixupExtension(name, pathname) == NULL)
 	//	return NULL;
 	//if (Py_VerboseFlag)
-	if ((*env)->CallStaticIntMethod(env, JyNIClass, JyNIGetDLVerbose))
+	if ((*env)->CallStaticIntMethod(env, JyNIClass, JyNI_getDLVerbose))
 		PySys_WriteStderr(
 			"import %s # dynamically loaded from %s\n",
 			name, pathname);

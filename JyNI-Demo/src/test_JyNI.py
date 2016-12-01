@@ -1,11 +1,13 @@
 '''
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -30,6 +32,35 @@ Created on 02.09.2014
 '''
 
 import sys
+import os
+from os import name
+import sys
+import platform
+
+# This will vastly simplify once Jython 2.7.1 is out and we have
+# uname and mac_ver available in Jython:
+if os.name == 'java':
+	machine = platform.java_ver()[-1][-1]
+	if machine == 'amd64':
+		machine = 'x86_64'
+	elif machine == 'x86':
+		machine = 'i686'
+	systm = platform.java_ver()[-1][0].lower().replace(' ', '')
+	if systm == 'macosx':
+		ver = platform.java_ver()[-1][1]
+		ver = ver[:ver.rfind('.')]
+		buildf = '-'.join((systm, ver, 'intel'))
+	else:
+		buildf = '-'.join((systm, machine))
+else:
+	systm = os.uname()[0].lower()
+	if systm == 'darwin':
+		ver = platform.mac_ver()[0]
+		ver = ver[:ver.rfind('.')]
+		buildf = '-'.join(('macosx', ver, 'intel'))
+	else:
+		buildf = '-'.join((systm, os.uname()[-1]))
+
 
 #Since invalid paths do no harm, we add several possible paths here, where
 #DemoExtension.so could be located in various build scenarios. If you use different
@@ -41,17 +72,32 @@ sys.path.append('./DemoExtension/Debug') #in case you run it from base dir
 #built with an IDE in release mode:
 sys.path.append('../../DemoExtension/Release') #in case you run it from src dir
 sys.path.append('./DemoExtension/Release') #in case you run it from base dir
-#built with setup.py on 64 bit machine:
-sys.path.append('../../DemoExtension/build/lib.linux-x86_64-2.7') #in case you run it from src dir
-sys.path.append('./DemoExtension/build/lib.linux-x86_64-2.7') #in case you run it from base dir
-#built with setup.py on 32 bit machine:
-sys.path.append('../../DemoExtension/build/lib.linux-i686-2.7') #in case you run it from src dir
-sys.path.append('./DemoExtension/build/lib.linux-i686-2.7') #in case you run it from base dir
-#built with setup.py on macosx 10.10:
-sys.path.append('../../DemoExtension/build/lib.macosx-10.10-intel-2.7') #in case you run it from src dir
-sys.path.append('./DemoExtension/build/lib.macosx-10.10-intel-2.7') #in case you run it from base dir
+#built with setup.py:
+sys.path.append('../../DemoExtension/build/lib.'+buildf+'-2.7') #in case you run it from src dir
+sys.path.append('./DemoExtension/build/lib.'+buildf+'-2.7') #in case you run it from base dir
 
-sys.path.insert(0, '/usr/lib/python2.7/lib-dynload')
+
+# datetime_path is expected to be folder containing datetime.so
+
+# This is the usual system path for datetime.so. On some distributions it actually
+# does not contain datetime.so; i.e. then datetime.so is part of libpython2.7.so.
+# (However JyNI cannot load libpython2.7.so for that purpose due to other symbol
+#  conflicts; you need to provide datetime.so in some other way then, e.g. by
+#  compiling CPython yourself)
+datetime_path = '/usr/lib/python2.7/lib-dynload'
+
+# This is an example-path for a self-compiled python:
+#datetime_path = '/data/workspace/linux/Python-2.7.11/build/lib.linux-x86_64-2.7'
+
+sys.path.insert(0, datetime_path)
+
+def hasNativeDatetime():
+	if os.name == 'java':
+		from JyNI import JyNI
+		return JyNI.isLibraryFileAvailable('datetime')
+	else:
+		# Let's assume native datetime is trivially available for non-Java case:
+		return True
 
 import DemoExtension
 import datetime
@@ -79,6 +125,15 @@ class TestJyNI(unittest.TestCase):
 		self.assertEqual(DemoExtension.intSquare.__name__, "intSquare")
 		self.assertEqual(DemoExtension.intSquare(16), 256)
 		self.assertEqual(DemoExtension.intSquare(19), 361)
+		self.assertEqual(DemoExtension.intSquare1(-19), 361)
+
+	def test_boolean_passing(self):
+		self.assertEqual(DemoExtension.booleanToInt(False), 0)
+		self.assertEqual(DemoExtension.booleanToInt(True), 1)
+		self.assertIsNone(DemoExtension.booleanToInt(99))
+		self.assertTrue(DemoExtension.intToBoolean(1))
+		self.assertFalse(DemoExtension.intToBoolean(0))
+		self.assertIsNone(DemoExtension.intToBoolean(2))
 
 	def test_native_list_access_writing(self):
 		l = ["Hello", "lovely", "world"]
@@ -87,7 +142,7 @@ class TestJyNI(unittest.TestCase):
 		self.assertEqual(len(l), 3)
 
 	#Passing self-containing objects to native code used to crash JyNI.
-	#This test proofs that this is fixed.
+	#This test proves that this is fixed.
 	def test_native_list_selfcontaining(self):
 		l = ["Hello", "lovely", "world"]
 		l[1] = l
@@ -96,7 +151,9 @@ class TestJyNI(unittest.TestCase):
 		self.assertEqual(len(l), 3)
 		self.assertEqual(str(l), "['natively modified', [...], 'world']")
 
-	def test_native_tuple_selfcontaining(self):
+	def test_native_sequence_selfcontaining(self):
+		# In early JyNI-days self-containing sequences used
+		# to trigger infinite conversion loops
 		l = ["Hello", "lovely", "world"]
 		l[1] = (11, 12, l)
 		DemoExtension.listModifyTest(l, 2)
@@ -142,12 +199,61 @@ class TestJyNI(unittest.TestCase):
 		self.assertRaisesRegexp(SystemError, "This is a test exception message for JyNI.", DemoExtension.exceptionTest)
 		try:
 			DemoExtension.exceptionTest()
-			self.assertEqual(1, 2) #would always fail, but is not reached, if everything works as expected
+			self.assertEqual(1, 2) #would always fail, but is not reached if everything works as expected
 		except SystemError:
 			exc = sys.exc_info()
 			self.assertEqual(exc[0], SystemError)
 			self.assertEqual(str(exc[1]), "This is a test exception message for JyNI.")
 
+	def test_new_style_classes(self):
+
+		class testnewstyle(object):
+			pass
+
+		class testnewstyleString(str):
+			pass
+
+		class testnewstyleInt(int):
+			pass
+
+		strType = type("")
+		intType = type(6)
+
+		nobj = testnewstyle()
+		self.assertTrue(DemoExtension.newstyleCheck(nobj))
+		self.assertFalse(DemoExtension.newstyleCheckSubtype(nobj, strType))
+		self.assertFalse(DemoExtension.newstyleCheckSubtype(nobj, intType))
+
+		nobj = testnewstyleString()
+		self.assertTrue(DemoExtension.newstyleCheck(nobj))
+		self.assertTrue(DemoExtension.newstyleCheckSubtype(nobj, strType))
+		self.assertFalse(DemoExtension.newstyleCheckSubtype(nobj, intType))
+
+		nobj = testnewstyleInt()
+		self.assertTrue(DemoExtension.newstyleCheck(nobj))
+		self.assertFalse(DemoExtension.newstyleCheckSubtype(nobj, strType))
+		self.assertTrue(DemoExtension.newstyleCheckSubtype(nobj, intType))
+
+	@unittest.skipUnless(os.name == 'java',
+		'Not runnable with CPython, because it uses JyNI-classes for testing.')
+	def test_custom_classes(self):
+		from JyNI import JyNIImporter, PyShadowString
+
+		strType = type("")
+		intType = type(6)
+
+		nobj = JyNIImporter()
+		self.assertTrue(DemoExtension.newstyleCheck(nobj))
+		self.assertFalse(DemoExtension.newstyleCheckSubtype(nobj, strType))
+		self.assertFalse(DemoExtension.newstyleCheckSubtype(nobj, intType))
+
+		nobj = PyShadowString("a", "b")
+		self.assertTrue(DemoExtension.newstyleCheck(nobj))
+		self.assertTrue(DemoExtension.newstyleCheckSubtype(nobj, strType))
+		self.assertFalse(DemoExtension.newstyleCheckSubtype(nobj, intType))
+
+	@unittest.skipUnless(hasNativeDatetime(),
+		'datetime.so not found (probably part of libpython2.7.so)')
 	def test_datetime(self):
 		self.assertEqual(datetime.__doc__, "Fast implementation of the datetime type.")
 		self.assertEqual(datetime.__name__, "datetime")
@@ -155,6 +261,13 @@ class TestJyNI(unittest.TestCase):
 		self.assertEqual(str(now), "2013-11-03 20:30:45")
 		self.assertEqual(repr(now), "datetime.datetime(2013, 11, 3, 20, 30, 45)")
 		self.assertEqual(str(type(now)), "<type 'datetime.datetime'>")
+
+	@unittest.skipUnless(os.name == 'java',
+		'Shuts down CPython silently for unknown reason; \
+		the tested API is used by Cython, so should actually work.')
+	def test_native_import_API_and_methoddescr(self):
+		self.assertEqual(DemoExtension.importAPIandMethodDescrTest(), 0)
+
 
 if __name__ == '__main__':
 	unittest.main()

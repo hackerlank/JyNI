@@ -1,11 +1,13 @@
 '''
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -30,6 +32,33 @@ Created on 10.07.2015
 '''
 
 import sys
+import os
+import platform
+
+# This will vastly simplify once Jython 2.7.1 is out and we have
+# uname and mac_ver available in Jython:
+if os.name == 'java':
+	machine = platform.java_ver()[-1][-1]
+	if machine == 'amd64':
+		machine = 'x86_64'
+	elif machine == 'x86':
+		machine = 'i686'
+	systm = platform.java_ver()[-1][0].lower().replace(' ', '')
+	if systm == 'macosx':
+		ver = platform.java_ver()[-1][1]
+		ver = ver[:ver.rfind('.')]
+		buildf = '-'.join((systm, ver, 'intel'))
+	else:
+		buildf = '-'.join((systm, machine))
+else:
+	systm = os.uname()[0].lower()
+	if systm == 'darwin':
+		ver = platform.mac_ver()[0]
+		ver = ver[:ver.rfind('.')]
+		buildf = '-'.join(('macosx', ver, 'intel'))
+	else:
+		buildf = '-'.join((systm, os.uname()[-1]))
+
 
 #Since invalid paths do no harm, we add several possible paths here, where
 #DemoExtension.so could be located in various build scenarios. If you use different
@@ -41,15 +70,9 @@ sys.path.append('./DemoExtension/Debug') #in case you run it from base dir
 #built with an IDE in release mode:
 sys.path.append('../../DemoExtension/Release') #in case you run it from src dir
 sys.path.append('./DemoExtension/Release') #in case you run it from base dir
-#built with setup.py on 64 bit machine:
-sys.path.append('../../DemoExtension/build/lib.linux-x86_64-2.7') #in case you run it from src dir
-sys.path.append('./DemoExtension/build/lib.linux-x86_64-2.7') #in case you run it from base dir
-#built with setup.py on 32 bit machine:
-sys.path.append('../../DemoExtension/build/lib.linux-i686-2.7') #in case you run it from src dir
-sys.path.append('./DemoExtension/build/lib.linux-i686-2.7') #in case you run it from base dir
-#built with setup.py on macosx 10.10:
-sys.path.append('../../DemoExtension/build/lib.macosx-10.10-intel-2.7') #in case you run it from src dir
-sys.path.append('./DemoExtension/build/lib.macosx-10.10-intel-2.7') #in case you run it from base dir
+#built with setup.py:
+sys.path.append('../../DemoExtension/build/lib.'+buildf+'-2.7') #in case you run it from src dir
+sys.path.append('./DemoExtension/build/lib.'+buildf+'-2.7') #in case you run it from base dir
 
 sys.path.insert(0, '/usr/lib/python2.7/lib-dynload')
 
@@ -86,6 +109,7 @@ class TestJyNI_gc(unittest.TestCase):
 
 	def test_gc_doc(self):
 		#print "test_gc_doc"
+		clearCurrentLeaks()
 		doc = DemoExtension.argCountToString.__doc__
 		#monitor.listLeaks()
 		self.assertEqual(len(monitor.getCurrentNativeLeaks()), 0)
@@ -211,9 +235,7 @@ class TestJyNI_gc(unittest.TestCase):
 		DemoExtension.listSetIndex(l, 0, d)
 		del d
 		self.assertEqual(len(monitor.getCurrentNativeLeaks()), 4)
-		#monitor.listAll()
 		runGC()
-		#monitor.listAll()
 		self.assertFalse(monitor.lastClearGraphValid)
 		self.assertIsNotNone(wkl.get())
 		self.assertIsNone(wkd.get())
@@ -224,7 +246,6 @@ class TestJyNI_gc(unittest.TestCase):
 		self.assertEqual(len(l[0]), 2)
 		del l
 		runGC()
-		#monitor.listAll()
 		self.assertTrue(monitor.lastClearGraphValid)
 
  		# For some reason resurrected objects persist one more
@@ -236,9 +257,7 @@ class TestJyNI_gc(unittest.TestCase):
 		# referent alive for one more cycle. So also the monitor-refcount
 		# test only passes after another gc-run now.
  		runGC()
- 		#monitor.listAll()
 		self.assertTrue(monitor.lastClearGraphValid)
-
 		self.assertEqual(len(monitor.getCurrentNativeLeaks()), 0)
 		self.assertIsNone(wkl2())
 		self.assertIsNone(wkd2())

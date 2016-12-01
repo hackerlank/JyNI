@@ -1,12 +1,16 @@
 /* This File is based on sysmodule.c from CPython 2.7.3 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -82,12 +86,12 @@ PySys_GetObject(char *name)
 		return NULL; // JNI version not supported
 	}
 	jobject nameStr = (*env)->NewStringUTF(env, name);
-	PyObject* er = (PyObject*) (*env)->CallStaticLongMethod(env, JyNIClass, JyNIGetJyObjectByName, nameStr);
+	PyObject* er = (PyObject*) (*env)->CallStaticLongMethod(env, JyNIClass, JyNI_getJyObjectByName, nameStr);
 	if (er != NULL)
 		return  er;
 	else
 	{
-		jobject result = (*env)->CallStaticObjectMethod(env, JyNIClass, JyNIGetPyObjectByName, nameStr);
+		jobject result = (*env)->CallStaticObjectMethod(env, JyNIClass, JyNI_getPyObjectByName, nameStr);
 		if (result == NULL)
 			return NULL;
 		else

@@ -1,12 +1,15 @@
 /* This File is based on objimpl.h from CPython 2.7.3 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
  *
  *
  * This file is part of JyNI.
@@ -195,7 +198,8 @@ PyAPI_FUNC(PyVarObject *) _PyObject_NewVar(PyTypeObject *, Py_ssize_t);
 #define PyObject_INIT_VAR(op, typeobj, size) \
     ( Py_SIZE(op) = (size), PyObject_INIT((op), (typeobj)) )
 
-#define _PyObject_SIZE(typeobj) ( (typeobj)->tp_basicsize )
+#define _PyObject_SIZE(typeobj) ( (typeobj)->tp_basicsize ? (typeobj)->tp_basicsize : (jputs("Warning: uninitialized tp_basicsize"), jputs((typeobj)->tp_name), (typeobj)->tp_basicsize))
+//#define _PyObject_SIZE(typeobj) ( (typeobj)->tp_basicsize )
 
 /* _PyObject_VAR_SIZE returns the number of bytes (as size_t) allocated for a
    vrbl-size object with nitems items, exclusive of gc overhead (if any).  The

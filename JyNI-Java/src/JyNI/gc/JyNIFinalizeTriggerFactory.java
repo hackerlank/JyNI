@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -30,17 +32,19 @@ import JyNI.JyNI;
 import org.python.core.PyObject;
 import org.python.core.PyInstance;
 import org.python.core.finalization.*;
+import org.python.modules.gc;
 
 public class JyNIFinalizeTriggerFactory implements FinalizeTriggerFactory {
 
 	static class JyNIFinalizeTrigger extends FinalizeTrigger {
-		// For now this is just a stub.
 		protected JyNIFinalizeTrigger(PyObject obj) {
 			super(obj);
 		}
 
+		@Override
 		public void performFinalization() {
-			JyNI.waitForCStubs();
+			if (gc.delayedFinalizationEnabled())
+				JyNI.waitForCStubs();
 			super.performFinalization();
 		}
 	}
@@ -57,6 +61,8 @@ public class JyNIFinalizeTriggerFactory implements FinalizeTriggerFactory {
 			 * its native counter-part dies, the native object detects this
 			 * and won't perform finalization, but instead reactivates this
 			 * finalizeTrigger.
+			 *
+			 * TODO: What about new-style instances?
 			 */
 				result.clear();
 		}

@@ -1,12 +1,16 @@
 /* This File is based on import.c from CPython 2.7.5 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -421,7 +425,7 @@ PyImport_GetModuleDict(void)
 {
 	env(NULL);
 	return JyNI_PyObject_FromJythonPyObject(
-		(*env)->CallStaticObjectMethod(env, JyNIClass, JyNIPyImport_GetModuleDict));
+		(*env)->CallStaticObjectMethod(env, JyNIClass, JyNI_PyImport_GetModuleDict));
 //    PyInterpreterState *interp = PyThreadState_GET()->interp;
 //    if (interp->modules == NULL)
 //        Py_FatalError("PyImport_GetModuleDict: no module dictionary!");
@@ -605,7 +609,7 @@ PyObject *
 _PyImport_FixupExtension(char *name, char *filename)
 {
 	env(NULL);
-	return JyNI_PyObject_FromJythonPyObject((*env)->CallStaticObjectMethod(env, JyNIClass, JyNI_PyImport_FindExtension));
+	return JyNI_PyObject_FromJythonPyObject((*env)->CallStaticObjectMethod(env, JyNIClass, JyNI__PyImport_FindExtension));
 //    PyObject *modules, *mod, *dict, *copy;
 //    if (extensions == NULL) {
 //        extensions = PyDict_New();
@@ -665,7 +669,7 @@ PyImport_AddModule(const char *name)
 {
 	env(NULL);
 	PyObject* er = JyNI_PyObject_FromJythonPyObject(
-		(*env)->CallStaticObjectMethod(env, JyNIClass, JyNIPyImport_AddModule,
+		(*env)->CallStaticObjectMethod(env, JyNIClass, JyNI_PyImport_AddModule,
 		(*env)->NewStringUTF(env, name)));
 	//printf("dest-check for module6: %u\n", (int) PyModule_Check(er));
 	/*int i;
@@ -2163,10 +2167,15 @@ PyImport_AddModule(const char *name)
 PyObject *
 PyImport_ImportModule(const char *name)
 {
+//	jputs(__FUNCTION__);
+//	jputs(name);
 	env(NULL);
-	return JyNI_PyObject_FromJythonPyObject(
-		(*env)->CallStaticObjectMethod(env, __builtin__Class,
-		__builtin__Import, (*env)->NewStringUTF(env, name)));
+	PyObject* result = JyNI_PyObject_FromJythonPyObject(
+		(*env)->CallStaticObjectMethod(env, impClass,
+			imp_importName, (*env)->NewStringUTF(env, name), JNI_FALSE));
+//	if (!result) jputs("Result is NULL");
+//	else jputs(PyModule_GetName(result));
+	return result;
 //    PyObject *pname;
 //    PyObject *result;
 //
@@ -2178,37 +2187,46 @@ PyImport_ImportModule(const char *name)
 //    return result;
 }
 
-///* Import a module without blocking
-// *
-// * At first it tries to fetch the module from sys.modules. If the module was
-// * never loaded before it loads it with PyImport_ImportModule() unless another
-// * thread holds the import lock. In the latter case the function raises an
-// * ImportError instead of blocking.
-// *
-// * Returns the module object with incremented ref count.
-// */
-//PyObject *
-//PyImport_ImportModuleNoBlock(const char *name)
-//{
-//    PyObject *result;
-//    PyObject *modules;
+/* Import a module without blocking
+ *
+ * At first it tries to fetch the module from sys.modules. If the module was
+ * never loaded before it loads it with PyImport_ImportModule() unless another
+ * thread holds the import lock. In the latter case the function raises an
+ * ImportError instead of blocking.
+ *
+ * Returns the module object with incremented ref count.
+ */
+PyObject *
+PyImport_ImportModuleNoBlock(const char *name)
+{
+//	jputs(__FUNCTION__);
+//	jputs(name);
+    PyObject *result;
+    PyObject *modules;
 //#ifdef WITH_THREAD
 //    long me;
 //#endif
-//
-//    /* Try to get the module from sys.modules[name] */
-//    modules = PyImport_GetModuleDict();
-//    if (modules == NULL)
-//        return NULL;
-//
-//    result = PyDict_GetItemString(modules, name);
-//    if (result != NULL) {
-//        Py_INCREF(result);
-//        return result;
-//    }
-//    else {
-//        PyErr_Clear();
-//    }
+    /* Try to get the module from sys.modules[name] */
+    modules = PyImport_GetModuleDict();
+    if (modules == NULL)
+        return NULL;
+    result = PyDict_GetItemString(modules, name);
+    if (result != NULL) {
+        Py_INCREF(result);
+//        jputsPy(result);
+//        jputsPy(modules);
+        return result;
+    }
+    else {
+        PyErr_Clear();
+    }
+    env(NULL);
+    jobject jres = (*env)->CallStaticObjectMethod(env, JyNIClass, JyNI_PyImport_ImportModuleNoBlock,
+    		(*env)->NewStringUTF(env, name), JNI_FALSE);
+    if ((*env)->ExceptionCheck(env)) {
+    	return NULL;
+    }
+    return JyNI_PyObject_FromJythonPyObject(jres);
 //#ifdef WITH_THREAD
 //    /* check the import lock
 //     * me might be -1 but I ignore the error here, the lock function
@@ -2228,8 +2246,8 @@ PyImport_ImportModule(const char *name)
 //#else
 //    return PyImport_ImportModule(name);
 //#endif
-//}
-//
+}
+
 ///* Forward declarations for helper routines */
 //static PyObject *get_parent(PyObject *globals, char *buf,
 //                            Py_ssize_t *p_buflen, int level);
@@ -2332,7 +2350,7 @@ PyImport_ImportModuleLevel(char *name, PyObject *globals, PyObject *locals,
 {
 	env(NULL);
 	return JyNI_PyObject_FromJythonPyObject(
-		(*env)->CallStaticObjectMethod(env, __builtin__Class, __builtin__ImportLevel,
+		(*env)->CallStaticObjectMethod(env, __builtin__Class, __builtin___ImportLevel,
 		(*env)->NewStringUTF(env, name), JyNI_JythonPyObject_FromPyObject(globals),
 		JyNI_JythonPyObject_FromPyObject(locals), JyNI_JythonPyObject_FromPyObject(fromlist),
 		level));
@@ -2763,14 +2781,18 @@ PyImport_ImportModuleLevel(char *name, PyObject *globals, PyObject *locals,
 //
 //    return m;
 //}
-//
-//
-///* Re-import a module of any kind and return its module object, WITH
-//   INCREMENTED REFERENCE COUNT */
-//
-//PyObject *
-//PyImport_ReloadModule(PyObject *m)
-//{
+
+
+/* Re-import a module of any kind and return its module object, WITH
+   INCREMENTED REFERENCE COUNT */
+
+PyObject *
+PyImport_ReloadModule(PyObject *m)
+{
+	env(NULL);
+	return JyNI_PyObject_FromJythonPyObject(
+			(*env)->CallObjectMethod(env, impClass, imp_reload,
+			JyNI_JythonPyObject_FromPyObject(m)));
 //    PyInterpreterState *interp = PyThreadState_Get()->interp;
 //    PyObject *modules_reloading = interp->modules_reloading;
 //    PyObject *modules = PyImport_GetModuleDict();
@@ -2868,21 +2890,22 @@ PyImport_ImportModuleLevel(char *name, PyObject *globals, PyObject *locals,
 //    imp_modules_reloading_clear();
 //    PyMem_FREE(buf);
 //    return newm;
-//}
-//
-//
-///* Higher-level import emulator which emulates the "import" statement
-//   more accurately -- it invokes the __import__() function from the
-//   builtins of the current globals.  This means that the import is
-//   done using whatever import hooks are installed in the current
-//   environment, e.g. by "rexec".
-//   A dummy list ["__doc__"] is passed as the 4th argument so that
-//   e.g. PyImport_Import(PyString_FromString("win32com.client.gencache"))
-//   will return <module "gencache"> instead of <module "win32com">. */
-//
-//PyObject *
-//PyImport_Import(PyObject *module_name)
-//{
+}
+
+
+/* Higher-level import emulator which emulates the "import" statement
+   more accurately -- it invokes the __import__() function from the
+   builtins of the current globals.  This means that the import is
+   done using whatever import hooks are installed in the current
+   environment, e.g. by "rexec".
+   A dummy list ["__doc__"] is passed as the 4th argument so that
+   e.g. PyImport_Import(PyString_FromString("win32com.client.gencache"))
+   will return <module "gencache"> instead of <module "win32com">. */
+
+PyObject *
+PyImport_Import(PyObject *module_name)
+{
+	return PyImport_ImportModule(PyString_AS_STRING(module_name));
 //    static PyObject *silly_list = NULL;
 //    static PyObject *builtins_str = NULL;
 //    static PyObject *import_str = NULL;
@@ -2945,9 +2968,9 @@ PyImport_ImportModuleLevel(char *name, PyObject *globals, PyObject *locals,
 //    Py_XDECREF(import);
 //
 //    return r;
-//}
-//
-//
+}
+
+
 ///* Module 'imp' provides Python access to the primitives used for
 //   importing modules.
 //*/

@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -36,9 +38,70 @@ import org.python.modules._weakref.*;
 
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 import java.io.File;
+import java.nio.file.FileSystems;
 
 public class JyNI {
+	public static final int NATIVE_INT_METHOD_NOT_IMPLEMENTED = -2;
+
+	/**Lazy function call binding.*/
+	public static final int RTLD_LAZY = 0x00001;
+	/**Immediate function call binding.*/
+	public static final int RTLD_NOW = 0x00002;
+	/**Mask of binding time value.*/
+	public static final int RTLD_BINDING_MASK = 0x3;
+	/**Do not load the object.*/
+	public static final int RTLD_NOLOAD = 0x00004;
+	/**Use deep binding.*/
+	public static final int RTLD_DEEPBIND = 0x00008;
+
+	/**If the following bit is set in the MODE argument to `dlopen',
+	   the symbols of the loaded object and its dependencies are made
+	   visible as if the object were linked directly into the program.*/
+	public static final int RTLD_GLOBAL = 0x00100;
+
+	/**Unix98 demands the following flag which is the inverse to RTLD_GLOBAL.
+	   The implementation does this by default and so we can define the
+	   value to zero.*/
+	public static final int RTLD_LOCAL = 0;
+
+	/** Do not delete object when closed.*/
+	public static final int RTLD_NODELETE = 0x01000;
+
+	public static final int RTLD_JyNI_DEFAULT = RTLD_LAZY | RTLD_GLOBAL;//RTLD_NOW;
+
+	public static final int Py_LT = 0;
+	public static final int Py_LE = 1;
+	public static final int Py_EQ = 2;
+	public static final int Py_NE = 3;
+	public static final int Py_GT = 4;
+	public static final int Py_GE = 5;
+
+	//Note: nativeHandles keeps (exclusively) natively needed objects save from beeing gc'ed.
+	//protected static IdentityHashMap<PyObject, PyObject> nativeHandlesKeepAlive = new IdentityHashMap<>();
+
+	/*
+	 * This keeps alive objects (especially CStub-backends) reachable from PyObjects
+	 * allocated on the C-stack rather than on the heap.
+	 */
+	public static HashMap<Long, JyGCHead> nativeStaticPyObjectHeads = new HashMap<>();
+	public static Set<Long> JyNICriticalObjectSet = new HashSet<>();
+
+	/*
+	 * This is to keep the backend of the native interned string-dict alive.
+	 * Todo: Arrange that this is a PyStringMap rather than PyDictionary.
+	 * Todo: Join this with nativeStaticPyObjectHeads using a CStub(Simple?)GCHead.
+	 */
+	public static PyObject nativeInternedStrings = null;
+	
+	//protected static IdentityHashMap<PyObject, Long> nativeHandles;// = new HashMap<PyObject, Long>();
+	//protected static IdentityHashMap<ThreadState, PyException> cur_excLookup;
+	/*
+	 * Todo: Make this a weak HashMap to allow PyCPeers to be mortal.
+	 */
+	protected static HashMap<Long, PyObject> CPeerHandles = new HashMap<Long, PyObject>();
+
 	static {
 		try {
 			/* To make configuration easier, we not only search on the library-path for the libs,
@@ -139,68 +202,10 @@ public class JyNI {
 			System.err.println("JyNI: Exception in initializer: "+ex);
 		}
 	}
-	
-	public static final String JyNIHandleAttr = "_JyNIHandleAttr".intern();
-	
-	/**Lazy function call binding.*/
-	public static final int RTLD_LAZY = 0x00001;
-	/**Immediate function call binding.*/
-	public static final int RTLD_NOW = 0x00002;
-	/**Mask of binding time value.*/
-	public static final int RTLD_BINDING_MASK = 0x3;
-	/**Do not load the object.*/
-	public static final int RTLD_NOLOAD = 0x00004;
-	/**Use deep binding.*/
-	public static final int RTLD_DEEPBIND = 0x00008;
-
-	/**If the following bit is set in the MODE argument to `dlopen',
-	   the symbols of the loaded object and its dependencies are made
-	   visible as if the object were linked directly into the program.*/
-	public static final int RTLD_GLOBAL = 0x00100;
-
-	/**Unix98 demands the following flag which is the inverse to RTLD_GLOBAL.
-	   The implementation does this by default and so we can define the
-	   value to zero.*/
-	public static final int RTLD_LOCAL = 0;
-
-	/** Do not delete object when closed.*/
-	public static final int RTLD_NODELETE = 0x01000;
-
-	public static final int RTLD_JyNI_DEFAULT = RTLD_LAZY | RTLD_GLOBAL;//RTLD_NOW;
-
-	//Note: nativeHandles keeps (exclusively) natively needed objects save from beeing gc'ed.
-	//protected static IdentityHashMap<PyObject, PyObject> nativeHandlesKeepAlive = new IdentityHashMap<>();
-
-	/*
-	 * This keeps alive objects (especially CStub-backends) reachable from PyObjects
-	 * allocated on the C-stack rather than on the heap.
-	 */
-	public static HashMap<Long, JyGCHead> nativeStaticPyObjectHeads = new HashMap<>();
-	public static Set<Long> JyNICriticalObjectSet = new HashSet<>();
-
-	/*
-	 * This is to keep the backend of the native interned string-dict alive.
-	 * Todo: Arrange that this is a PyStringMap rather than PyDictionary.
-	 * Todo: Join this with nativeStaticPyObjectHeads using a CStub(Simple?)GCHead.
-	 */
-	public static PyObject nativeInternedStrings = null;
-	
-	//protected static IdentityHashMap<PyObject, Long> nativeHandles;// = new HashMap<PyObject, Long>();
-	//protected static IdentityHashMap<ThreadState, PyException> cur_excLookup;
-	/*
-	 * Todo: Make this a weak HashMap to allow PyCPeers to be mortal.
-	 */
-	protected static HashMap<Long, PyObject> CPeerHandles = new HashMap<Long, PyObject>();
 
 	public static native void initJyNI(String JyNILibPath);
 	public static native void clearPyCPeer(long objectHandle, long refHandle);
 	public static native PyModule loadModule(String moduleName, String modulePath, long tstate);
-	//public static native JyObject callModuleFunctionGlobalReferenceMode(CPythonModule module, String name,
-			//JyObject self, JyObject... args);
-	//public static native PyObject callModuleFunctionGlobalReferenceMode(JyNIModule module, String name,
-			//PyObject self, long selfNativeHandle, PyObject[] args, long[] handles);
-	//public static native PyObject callModuleFunctionLocalReferenceMode(JyNIModule module, String name,
-			//PyObject self, long selfNativeHandle, PyObject... args);
 	public static native PyObject callPyCPeer(long peerHandle, PyObject args, PyObject kw, long tstate);
 	public static native PyObject getAttrString(long peerHandle, String name, long tstate);
 	public static native int setAttrString(long peerHandle, String name, PyObject value, long tstate);
@@ -209,7 +214,19 @@ public class JyNI {
 	public static native PyString PyObjectAsPyString(long peerHandle, long tstate);
 	public static native PyObject lookupFromHandle(long handle);
 	public static native int currentNativeRefCount(long handle);
+	public static native void nativeIncref(long handle, long tstate);
+	public static native void nativeDecref(long handle, long tstate);
 	public static native String getNativeTypeName(long handle);
+	public static native PyObject getItem(long peerHandle, PyObject key, long tstate);
+	public static native int setItem(long peerHandle, PyObject key, PyObject value, long tstate);
+	public static native int delItem(long peerHandle, PyObject key, long tstate);
+	public static native int PyObjectLength(long peerHandle, long tstate);
+	public static native PyObject descr_get(long self, PyObject obj, PyObject type, long tstate);
+	public static native int descr_set(long self, PyObject obj, PyObject value, long tstate);
+	public static native int JyNI_PyObject_Compare(long self, PyObject o, long tstate);
+	public static native PyObject JyNI_PyObject_RichCompare(long self, PyObject o, int op, long tstate);
+	public static native PyObject JyNI_PyObject_GetIter(long self, long tstate);
+	public static native PyObject JyNI_PyIter_Next(long self, long tstate);
 
 	//ThreadState-stuff:
 	public static native void setNativeRecursionLimit(int nativeRecursionLimit);
@@ -228,6 +245,78 @@ public class JyNI {
 
 	//Set-Stuff:
 	public static native void JySet_putSize(long handle, int size);
+
+	//PyCFunction-Stuff:
+	public static native PyObject PyCFunction_getSelf(long handle, long tstate);
+	public static native PyObject PyCFunction_getModule(long handle, long tstate);
+	public static native PyObject JyNI_CMethodDef_bind(long handle, PyObject bindTo, long tstate);
+
+	//Number protocol:
+	//public static native int JyNI_PyNumber_Check(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Add(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Subtract(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Multiply(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Divide(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Remainder(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Divmod(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Power(long o1, PyObject o2, PyObject o3, long tstate);
+	public static native PyObject JyNI_PyNumber_Negative(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Positive(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Absolute(long o, long tstate);
+	public static native boolean  JyNI_PyNumber_NonZero(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Invert(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Lshift(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Rshift(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_And(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Xor(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Or(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Coerce(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Int(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Long(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Float(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Oct(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_Hex(long o, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceAdd(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceSubtract(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceMultiply(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceDivide(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceRemainder(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlacePower(long o1, PyObject o2, PyObject o3, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceLshift(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceRshift(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceAnd(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceXor(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceOr(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_FloorDivide(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_TrueDivide(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceFloorDivide(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_InPlaceTrueDivide(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PyNumber_Index(long o, long tstate);
+
+	public static native int      JyNI_PySequence_Length(long o, long tstate);
+	public static native PyObject JyNI_PySequence_Concat(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PySequence_Repeat(long o, int l, long tstate);
+	public static native PyObject JyNI_PySequence_GetItem(long o, int l, long tstate); //PySequence_Item
+	public static native PyObject JyNI_PySequence_GetSlice(long o, int l1, int l2, long tstate); //PySequence_Slice
+	public static native int      JyNI_PySequence_SetItem(long o1, int l, PyObject o2, long tstate); //PySequence_AssItem
+	public static native int      JyNI_PySequence_SetSlice(long o, int l1, int l2, PyObject o2, long tstate); //PySequence_AssSlice
+	public static native int      JyNI_PySequence_Contains(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PySequence_InPlaceConcat(long o1, PyObject o2, long tstate);
+	public static native PyObject JyNI_PySequence_InPlaceRepeat(long o, int l, long tstate);
+
+	public static native int      JyNI_PyMapping_Length(long o, long tstate);
+	// use getItem instead of:
+	//public static native PyObject JyNI_PyMapping_Subscript(long o1, PyObject o2, long tstate);
+	// use setItem instead of:
+	//public static native int JyNI_PyMapping_AssSubscript(long o1, PyObject o2, PyObject o3, long tstate);
+
+	// Postpone these until buffer protocol support is focused
+//	public static native int      JyNI_PyBuffer_Getreadbuffer(long o, long tstate);
+//	public static native int      JyNI_PyBuffer_Getwritebuffer(long o, long tstate);
+//	public static native int      JyNI_PyBuffer_Getsegcount(long o, long tstate);
+//	public static native int      JyNI_PyBuffer_Getcharbuffer(long o, long tstate);
+//	public static native int      JyNI_PyBuffer_Getbuffer(long o, long tstate);
+//	public static native void     JyNI_PyBuffer_Releasebuffer(long o, long tstate);
 
 	//ReferenceMonitor- and GC-Stuff:
 	public static native void JyRefMonitor_setMemDebugFlags(int flags);
@@ -252,35 +341,12 @@ public class JyNI {
 	protected static native void releaseWeakReferent(long handle, long tstate);
 	//public static native JyGCHead JyGC_lookupGCHead(long handle);
 
-	//use PySet.set_pop() instead. There are also hidden direct correspondents to other set methods.
-	/*public static PyObject PySet_pop(BaseSet set)
-	{
-		if (set.isEmpty()) return null;
-		Iterator it = set.iterator();
-		Object obj = it.next();
-		
-		PyObject er = (PyObject) obj;//it.next();
-		System.out.println("PySet_pop retrieves "+er.__repr__());
-//		while (!set.remove(er))
-//		{
-//			try {er = (PyObject) it.next();}
-//			catch (Exception e) {it = set.iterator();}
-//		}
-//		System.out.println("PySet_pop returns "+er.__repr__());
-		return er;
-	}*/
-
-//	public static PyObject callModuleFunction(JyNIModule module, String name, PyObject self, long selfNativeHandle, PyObject... args)
-//	{
-//		return callModuleFunctionLocalReferenceMode(module, name, self, selfNativeHandle, args);
-//	}
-
 	public static PyObject getPyObjectByName(String name)
 	{
 		//todo: Check, whether this does what it is supposed to
 		//System.out.println("JyNI: Getting Object by name: "+name);
 		PySystemState sysState = Py.getSystemState();
-		return Py.getThreadState().systemState.__dict__.__getitem__(new PyString(name))._doget(sysState);
+		return Py.getThreadState().getSystemState().__dict__.__getitem__(new PyString(name))._doget(sysState);
 		//PyObject er = Py.getThreadState().systemState.__dict__.__getitem__(new PyString(name));
 		/*PyObject er = sysState.__dict__.__finditem__(name);
 		System.out.println("found: "+er.getClass().getName());
@@ -322,7 +388,7 @@ public class JyNI {
 	public static int getDLOpenFlags()
 	{
 		try {
-			return ((PyInteger) Py.getThreadState().systemState.__getattr__("dlopenflags")).asInt();
+			return ((PyInteger) Py.getThreadState().getSystemState().__getattr__("dlopenflags")).asInt();
 		} catch (Exception e1)
 		{
 			try {
@@ -333,11 +399,11 @@ public class JyNI {
 			}
 		}
 	}
-		
+
 	public static void setDLOpenFlags(int n)
 	{
 		try {
-			Py.getThreadState().systemState.__setattr__("dlopenflags", new PyInteger(n));
+			Py.getThreadState().getSystemState().__setattr__("dlopenflags", new PyInteger(n));
 		} catch (Exception e1)
 		{
 			try {
@@ -349,13 +415,6 @@ public class JyNI {
 		}
 	}
 
-//	public static void registerNativeStaticTypeDict(String type, PyDictionary dict) {
-//		//System.out.println("JyNI Registered type-dict: "+type+" - "+lookupNativeHandle(dict));
-//		if (nativeStaticTypeDicts.get(type) != null)
-//			System.out.println("Warning: Registered type-dict twice: "+type);
-//		nativeStaticTypeDicts.put(type,  dict);
-//	}
-
 	public static void registerNativeStaticJyGCHead(long handle, JyGCHead head) {
 		nativeStaticPyObjectHeads.put(handle, head);
 	}
@@ -365,11 +424,21 @@ public class JyNI {
 	}
 
 	public static void addJyNICriticalObject(long handle) {
-		JyNICriticalObjectSet.add(handle);
+		synchronized (JyNICriticalObjectSet) {
+			JyNICriticalObjectSet.add(handle);
+		}
 	}
 
 	public static void removeJyNICriticalObject(long handle) {
-		JyNICriticalObjectSet.remove(handle);
+		synchronized (JyNICriticalObjectSet) {
+			JyNICriticalObjectSet.remove(handle);
+		}
+	}
+
+	public static int getNativeRefCount(PyObject obj) {
+		long handle = lookupNativeHandle(obj);
+		if (handle == 0) return -2;
+		else return currentNativeRefCount(handle);
 	}
 
 	public static void setNativeHandle(PyObject object, long handle) {//, boolean keepAlive) {
@@ -383,8 +452,15 @@ public class JyNI {
 //			nativeHandlesKeepAlive.put(object, object);
 //			//System.out.println("Would keep alive: "+handle+" - "+object);
 //		}
-		if (object instanceof PyCPeer) {
-			((PyCPeer) object).objectHandle = handle;
+//		if (object instanceof PyCPeer) {
+//			((PyCPeer) object).objectHandle = handle;
+		if (object instanceof CPeerInterface) {
+			/* CPeers should have been properly initialized and should keep the same
+			 * handle during entire lifetime. Once JyNI is better tested and established
+			 * we can remove the following check:
+			 */
+			if (((CPeerInterface) object).getHandle() != handle)
+				System.err.println("JyNI-Warning: CPeerInterface not properly initialized: "+object.getType());
 		} else {
 			JyAttribute.setAttr(object, JyAttribute.JYNI_HANDLE_ATTR, handle);
 		}
@@ -392,17 +468,18 @@ public class JyNI {
 
 	//public static long lookupNativeHandle(PyObject object)
 	public static long lookupNativeHandle(PyObject object) {
-		//System.out.println("lookup native handle: "+object);
 		if (object == null) return 0;
-		if (object instanceof PyCPeer) return ((PyCPeer) object).objectHandle;
+		//if (object instanceof PyCPeer) return ((PyCPeer) object).objectHandle;
+		if (object instanceof CPeerInterface)
+			return ((CPeerInterface) object).getHandle();
 		else {
 			//Long er = nativeHandles.get(object);
 			Long er = (Long) JyAttribute.getAttr(object, JyAttribute.JYNI_HANDLE_ATTR);
+//			if (er == null && object instanceof PyType) System.out.println("lookup failed: "+((PyType) object).getName());
 			return er == null ? 0 : er.longValue();
 
 //			System.out.println("Exception before:");
 //			System.out.println(Py.getThreadState().exception);
-			//We abuse PyCPeer as a dumb container for the native handle here.
 			//System.out.println("find handle...");
 			//PyCPeer peer = (PyCPeer) object.__findattr__(JyNIHandleAttr);
 //			System.out.println("Exception afterwards:");
@@ -451,19 +528,6 @@ public class JyNI {
 //			object.__delattr__(JyNIHandleAttr);
 //		}
 	}
-
-//	public static PyObject callModuleFunctionGlobalReferenceMode(JyNIModule module, String name, PyObject self, PyObject... args)
-//	{
-//		Long selfHandle = nativeHandles.get(self);
-//		
-//		long[] handles = new long[args.length];
-//		for (int i = 0; i < args.length; ++i)
-//		{
-//			Long handle = nativeHandles.get(args[i]);
-//			handles[i] = handle == null ? 0 : handle;
-//		}
-//		return callModuleFunctionGlobalReferenceMode(module, name, self, selfHandle == null ? 0 : selfHandle, args, handles);
-//	}
 	
 	public static PyObject _PyImport_FindExtension(String name, String filename) {
 		return null;
@@ -476,31 +540,55 @@ public class JyNI {
 	public static PyObject PyImport_AddModule(String name) {
 		String nm = name.intern();
 		PySystemState pss = Py.getSystemState();
-		PyObject er = pss.modules.__finditem__(name);
-		if (er != null && er.getType().isSubType(PyModule.TYPE)) return er;
+		PyObject er = pss.modules.__finditem__(nm);
+		//if (er != null && er.getType().isSubType(PyModule.TYPE)) return er;
+		if (er != null) return er;
 		else
 		{
-			er = new PyModule(nm);
-			//pss.modules.__setattr__(nm, er);
-			pss.modules.__setitem__(name, er);
-			//System.out.println("JYNY rr: "+er);
-			//System.out.println(er.getType().getName());
-			//ERRR
+			er = new PyModule(nm, new PyNativeRefHoldingStringMap());
+			pss.modules.__setitem__(nm, er);
 			return er;
 		}
 	}
-	
+
+	public static PyObject PyImport_ImportModuleNoBlock(String name, boolean top) {
+//		System.out.println("PyImport_ImportModuleNoBlock... "+name);
+		PyUnicode.checkEncoding(name);
+		ReentrantLock importLock = Py.getSystemState().getImportLock();
+		if (importLock.tryLock())
+		{
+//			System.out.println("PyImport_ImportModuleNoBlock acquired lock. Name: "+name);
+//			PyObject result = imp.importName(name, top);
+//			System.out.println("Result: "+result);
+//			importLock.unlock();
+//			return result;
+			try {
+				return imp.importName(name, top);
+			} finally {
+				importLock.unlock();
+			}
+		} else {
+//			System.out.println("PyImport_ImportModuleNoBlock failed to lock");
+			throw Py.ImportError("Failed to import " + name +
+					" because the import lock is held by another thread.");
+		}
+	}
+
 	public static PyObject JyNI_GetModule(String name) {
 		String nm = name.intern();
 		PySystemState pss = Py.getSystemState();
-		PyObject er = pss.modules.__finditem__(name);
+		PyObject er = pss.modules.__finditem__(nm);
 		if (er != null && er.getType().isSubType(PyModule.TYPE)) return er;
 		else {
 			System.out.println("JyNI: No module found: "+name);
 			return null;
 		}
 	}
-	
+
+	public static PyObject getJythonGlobals() {
+		return Py.getFrame().f_globals;
+	}
+
 	public static PyType getPyType(Class pyClass) {
 		try {
 			Field tp = pyClass.getField("TYPE");
@@ -531,6 +619,8 @@ public class JyNI {
 
 	public static PyClass getTypeOldStyleParent(PyObject obj) {
 		PyObject bases = obj.getType().getBases();
+//		System.out.println(obj);
+//		System.out.println(bases);
 		PyObject result;
 		for (int i = 0; i < bases.__len__(); ++i) {
 			result = bases.__getitem__(i);
@@ -570,12 +660,10 @@ public class JyNI {
 	 */
 	public static String[] prepareKeywordArgs(PyObject[] argsDest, PyDictionary keywords) {
 		String[] er = new String[keywords.size()];
-		int offset = argsDest.length-er.length;
-		Iterator<Map.Entry<PyObject, PyObject>> kw = keywords.getMap().entrySet().iterator();
-		Map.Entry<PyObject, PyObject> entry = kw.next();
-		for (int i = 0; i < er.length; ++i) {
-			er[i] = ((PyString) entry.getKey()).asString();
-			argsDest[offset+i] = entry.getValue();
+		int offset = argsDest.length-er.length, i = 0;
+		for (Map.Entry<PyObject, PyObject> entry: keywords.getMap().entrySet()) {
+			er[i++] = ((PyString) entry.getKey()).asString();
+			argsDest[offset++] = entry.getValue();
 		}
 		return er;
 	}
@@ -680,103 +768,6 @@ public class JyNI {
 		//System.out.println("printPyLong");
 		System.out.println(((PyLong) pl).getValue());
 	}
-	
-	/*public static JyNIDictNextResult getPyDictionary_Next(PyDictionary dict, int index)
-	{
-		if (index >= dict.size()) return null;
-		Object[] ar = dict.entrySet().toArray();
-		int nxt = index;
-		Map.Entry me = (Map.Entry) ar[nxt++];
-		while(me.getValue() == null)
-		{
-			if (nxt >= ar.length) return null;
-			me = (Map.Entry) ar[nxt++];
-		}
-		if (nxt == ar.length) nxt = -1;
-		return new JyNIDictNextResult(nxt, (PyObject) me.getKey(), (PyObject) me.getValue());
-	}*/
-	
-	/*
-	public static PyObject constructDefaultObject(Class pyObjectClass) throws IllegalArgumentException
-	{
-		if (pyObjectClass.equals(PyType.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyNotImplemented.class)) return Py.NotImplemented;
-		else if (pyObjectClass.equals(PyNone.class)) return Py.None;
-		else if (pyObjectClass.equals(PyFile.class)) return new PyFile();
-		else if (pyObjectClass.equals(PyModule.class)) return new PyModule();
-		else if (pyObjectClass.equals(PyCell.class)) return new PyCell();
-		else if (pyObjectClass.equals(PyClass.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyInstance.class)) return new PyInstance();
-		else if (pyObjectClass.equals(PyMethod.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyFunction.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyClassMethod.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyStaticMethod.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyMethodDescr.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyClassMethodDescr.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyDictProxy.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyProperty.class)) return new PyProperty();
-		else if (pyObjectClass.equals(PyBoolean.class)) return new PyBoolean(false);
-		else if (pyObjectClass.equals(PyFloat.class)) return new PyFloat(0.0f);
-		else if (pyObjectClass.equals(PyInteger.class)) return new PyInteger(0);
-		else if (pyObjectClass.equals(PyLong.class)) return new PyLong(0);
-		else if (pyObjectClass.equals(PyComplex.class)) return new PyComplex(0, 0);
-		else if (pyObjectClass.equals(PyUnicode.class)) return new PyUnicode();
-		else if (pyObjectClass.equals(PyString.class)) return new PyString();
-		else if (pyObjectClass.equals(PyBaseString.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" is considered an abstract class.");
-		else if (pyObjectClass.equals(PySequenceIter.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyXRange.class)) return new PyXRange(0);
-		else if (pyObjectClass.equals(PyTuple.class)) return new PyTuple();
-		else if (pyObjectClass.equals(PyFastSequenceIter.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyList.class)) return new PyList();
-		else if (pyObjectClass.equals(PyReversedIterator.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyDictionary.class)) return new PyDictionary();
-		else if (pyObjectClass.equals(PySet.class)) return new PySet();
-		else if (pyObjectClass.equals(PyFrozenSet.class)) return new PyFrozenSet();
-		else if (pyObjectClass.equals(PyEnumerate.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PySlice.class)) return new PySlice();
-		else if (pyObjectClass.equals(PyEllipsis.class)) return Py.Ellipsis;
-		else if (pyObjectClass.equals(PyGenerator.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyCode.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyCallIter.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyFrame.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PySuper.class)) return new PySuper();
-		else if (pyObjectClass.equals(PyBaseException.class)) return new PyBaseException();
-		else if (pyObjectClass.equals(PyTraceback.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" cannot be constructed this way.");
-		else if (pyObjectClass.equals(PyByteArray.class)) return new PyByteArray();
-		else if (pyObjectClass.equals(PyObject.class)) throw new IllegalArgumentException(pyObjectClass.getName()+" is considered an abstract class.");
-		else throw new IllegalArgumentException("Given class refers to no PyObject known by JNI");
-	}*/
-	
-	/*public static PyObject callModuleFunction(CPythonModule module, String name, PyObject self, PyObject... args)
-	{
-		JyObject[] jyArgs = new JyObject[args.length];
-		for (int i = 0; i < jyArgs.length; ++i)
-		{
-			jyArgs[i] = jyObjects.get(args[i]);
-			if (jyArgs[i] == null)
-			{
-				jyArgs[i] = new JyObject(args[i]);
-				jyObjects.put(args[i], jyArgs[i]);
-			}
-		}
-		if (self != null)
-		{
-			JyObject self2 = jyObjects.get(self);
-			if (self2 == null)
-			{
-				self2 = new JyObject(self);
-				jyObjects.put(self, self2);
-			}
-			JyObject er = callModuleFunction(module, name, self2, jyArgs);
-			jyObjects.put(er.object, er);
-			return er.object;
-		} else
-		{
-			JyObject er = callModuleFunction(module, name, null, jyArgs);
-			jyObjects.put(er.object, er);
-			return er.object;
-		}
-	}*/
 
 	public static long[] lookupNativeHandles(PyList lst) {
 		PyObject[] obj = lst.getArray();
@@ -791,11 +782,14 @@ public class JyNI {
 	}
 
 	public static PyObjectGCHead makeGCHead(long handle, boolean forMirror, boolean gc) {
+//		PyObject obj = lookupFromHandle(handle);
+		//System.out.println("makeGCHead for "+obj+" of type "+(obj != null ? obj.getType().getName() : "N/A"));
 		//Todo: Use a simpler head if object cannot have links.
 		PyObjectGCHead result;
 		if (gc) result = forMirror ? new CMirrorGCHead(handle) : new CStubGCHead(handle);
 		else result = forMirror ? new CMirrorSimpleGCHead(handle) : new CStubSimpleGCHead(handle);
 		new JyWeakReferenceGC(result);
+		//System.out.println(result.getClass());
 		return result;
 	}
 
@@ -804,21 +798,25 @@ public class JyNI {
 	}
 
 	//--------------errors-section-----------------
+	protected static PyException JyNI_exc;
+
 	public static PyObject exceptionByName(String name) {
-//		System.out.println("look for exception: "+name);
+		//System.out.println("look for exception: "+name);
 		String rawName = name;
 		int pin = name.indexOf('.');
 		if (pin != -1) rawName = rawName.substring(pin+1);
-//		System.out.println("rawName: "+rawName);
+		//System.out.println("rawName: "+rawName);
 		try {
 			Field exc = Py.class.getField(rawName);
 			PyObject er = (PyObject) exc.get(null);
 //			System.out.println("return "+er);
 //			System.out.println("class: "+er.getClass());
 			return er;
+		} catch (NoSuchFieldException nsfe) {
+			return null;
 		} catch (Exception e) {
-			System.err.println("JyNI-Warning: Could not obtain Exception: "+name);
-			System.err.println("  Reason: "+e);
+//			System.err.println("JyNI-Warning: Could not obtain Exception: "+name);
+//			System.err.println("  Reason: "+e);
 			return null;
 		}
 	}
@@ -846,39 +844,78 @@ public class JyNI {
 	}*/
 
 	protected static PyObject maybeExc(PyObject obj) throws PyException {
-		if (obj == null && Py.getThreadState().exception != null) throw Py.getThreadState().exception;
-		else return obj;
+		if (obj == null && JyNI_exc != null) {
+			PyException tmp_exc = JyNI_exc;
+			JyNI_exc = null;
+//			System.out.println(tmp_exc);
+//			tmp_exc.printStackTrace();
+			throw tmp_exc;
+		} else return obj;
+	}
+
+	protected static boolean maybeExc(boolean bl) throws PyException {
+		if (JyNI_exc != null) {
+			PyException tmp_exc = JyNI_exc;
+			JyNI_exc = null;
+			throw tmp_exc;
+		} else return bl;
+	}
+
+	protected static int maybeExc(int res) throws PyException {
+		if (res != 0 && JyNI_exc != null) {
+			PyException tmp_exc = JyNI_exc;
+			JyNI_exc = null;
+			throw tmp_exc;
+		} else return res;
+	}
+
+	protected static int maybeExc(int res, int err) throws PyException {
+		if (res == err && JyNI_exc != null) {
+			PyException tmp_exc = JyNI_exc;
+			JyNI_exc = null;
+			throw tmp_exc;
+		} else return res;
+	}
+
+	protected static void maybeExc() throws PyException {
+		if (JyNI_exc != null) {
+			PyException tmp_exc = JyNI_exc;
+			JyNI_exc = null;
+			throw tmp_exc;
+		}
 	}
 
 	public static void JyErr_InsertCurExc(ThreadState tstate, PyObject type, PyObject value, PyTraceback traceback) {
+//		System.out.println("JyErr_InsertCurExc "+tstate);
+//		System.out.println(value);
 		if (type == null) type = Py.None;
 		if (value == null) value = Py.None;
+		JyNI_exc = new PyException(type, value, traceback);
 		ThreadState tstate0 = tstate == null ? Py.getThreadState() : tstate;
-		tstate0.exception = new PyException(type, value, traceback);
-//		PyException cur_exc = cur_excLookup.remove(tstate0);
-//		if (cur_exc != null)
-//		{
-//			tstate0.exception = cur_exc;
-//		}
-		//System.out.println("JyErr_InsertCurExc 3");
+		tstate0.exception = JyNI_exc;
 	}
 
-	public static void JyErr_InsertCurExc(ThreadState tstate, PyObject type, PyObject value) {
-		if (type == null) type = Py.None;
-		if (value == null) value = Py.None;
+	public static void JyErr_PrintEx(boolean set_sys_last_vars, ThreadState tstate, PyObject type, PyObject value, PyTraceback traceback) {
 		ThreadState tstate0 = tstate == null ? Py.getThreadState() : tstate;
-		tstate0.exception = new PyException(type, value);
+		if (set_sys_last_vars) {
+			JyErr_InsertCurExc(tstate0, type, value, traceback);
+			tstate0.exception.normalize();
+			Py.printException(tstate0.exception);
+		} else {
+			PyException exc = new PyException(type, value, traceback);
+			exc.normalize();
+			Py.printException(exc);
+		}
 	}
 
-	public static void JyErr_InsertCurExc(ThreadState tstate, PyObject type) {
-		if (type == null) type = Py.None;
-		ThreadState tstate0 = tstate == null ? Py.getThreadState() : tstate;
-		tstate0.exception = new PyException(type);
-	}
-
-	public static void JyErr_InsertCurExc(ThreadState tstate) {
-		ThreadState tstate0 = tstate == null ? Py.getThreadState() : tstate;
-		tstate0.exception = new PyException();
+	public static void JyErr_DebugPrintEx() {
+		ThreadState tstate0 = Py.getThreadState();
+		PyException exc = tstate0.exception;
+		System.out.println(exc);
+		if (exc != null) {
+			System.out.println(exc.type);
+			System.out.println(exc.value);
+		}
 	}
 
 	/*public static void PyErr_Restore(PyObject type, PyObject value, PyTraceback traceback) {
@@ -1009,18 +1046,14 @@ public class JyNI {
 		Py_XDECREF(tb);*/
 	}
 
-	/*public static void main(String[] args)
-	{
-		System.out.println(System.getProperty("user.dir"));
+	public static PyTraceback JyNI_PyTraceBack_Here(PyFrame frame, ThreadState tstate) {
+		if (tstate == null) tstate = Py.getThreadState();
+		if (tstate.exception == null) {
+			tstate.exception = new PyException();
+		}
+		tstate.exception.tracebackHere(frame);
+		return tstate.exception.traceback;
 	}
-	/*
-		Class c = PyBoolean.class;
-		try {
-			Field tp = c.getField("TYPE");
-			PyType t = (PyType) tp.get(null);
-			System.out.println(t.getName());
-		} catch (Exception e) {}
-	}*/
 
 	public static int slice_compare(PySlice v, PySlice w) {
 		int result = 0;
@@ -1066,25 +1099,92 @@ public class JyNI {
 		return PySystemState.version.asString();
 	}
 
+	public static boolean isPosix() {
+		return FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
+	}
+
+	/**
+	 * Emulates CPython's way to name sys.platform.
+	 */
+	public static String getNativePlatform() {
+		/* Works according to this table:
+
+		.---------------------.--------.
+		| System              | Value  |
+		|---------------------|--------|
+		| Linux (2.x and 3.x) | linux2 |
+		| Windows             | win32  |
+		| Windows/Cygwin      | cygwin |
+		| Mac OS X            | darwin |
+		| OS/2                | os2    |
+		| OS/2 EMX            | os2emx |
+		| RiscOS              | riscos |
+		| AtheOS              | atheos |
+		'---------------------'--------'
+		*/
+		String osname = System.getProperty("os.name");
+		if (osname.equals("Linux")) return "linux2";
+		if (osname.equals("Mac OS X")) return "darwin";
+		// Not considering cygwin for now...
+		if (osname.startsWith("Windows")) return "win32";
+		return osname.replaceAll("[\\s/]", "").toLowerCase();
+	}
+
+	/**
+	 * a variant of the builtin type() constructor producing a type
+	 * backed by old-style class.
+	 */
+	public static PyObject oldStyle_type(PyObject name, PyObject bases, PyObject dict) {
+		return PyClass.classobj___new__(name, bases, dict);
+	}
+
+	public static boolean isLibraryFileAvailable(String libname) {
+		if (JyNIInitializer.importer == null) return false;
+		if (JyNIImporter.dynModules.containsKey(libname))
+			// Must be checked here to account for statically linked libs
+			return true;
+		String suf = "."+JyNIImporter.getSystemDependentDynamicLibraryExtension();
+		for (String s : JyNIInitializer.importer.libPaths)
+		{
+			File fl = new File(s);
+			String[] ch = fl.list();
+			if (ch != null)
+			{
+				for (String m : ch)
+				{
+					if (m.startsWith(libname+".") && m.endsWith(suf))
+						return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	public static void jPrint(String msg) {
-		System.out.println(msg);
+		if (msg == null) System.out.println("null (actually)");
+		else System.out.println(msg);
+		//System.out.flush();
 	}
 	
 	public static void jPrint(long val) {
 		System.out.println(val);
+		//System.out.flush();
 	}
 
-	public static void jPrintHash(Object val) {
-		try {
-			System.out.println(val.hashCode()+" ("+System.identityHashCode(val)+")");
-		} catch (Exception e) {
-			System.out.println("("+System.identityHashCode(val)+")");
-		}
+	public static int jGetHash(Object val) {
+		return System.identityHashCode(val);
+//		try {
+//			System.out.println(val.hashCode()+" ("+System.identityHashCode(val)+")");
+//		} catch (Exception e) {
+//			System.out.println("("+System.identityHashCode(val)+")");
+//		}
+		//System.out.flush();
 	}
 
 	public static void jPrintInfo(Object val) {
 		System.out.println("Object: "+val);
 		System.out.println("Class: "+val.getClass());
+		//System.out.flush();
 	}
 
 //---------gc-section-----------
@@ -1092,7 +1192,7 @@ public class JyNI {
 	 * Stuff here is actually no public API, but partly
 	 * declared public for interaction with JyNI.gc-package.
 	 * Todo: Maybe move it to JyNI.-package and make it
-	 *       protected or package-scoped.
+	 *   protected or package-scoped.
 	 */
 	public static final int JYNI_GC_CONFIRMED_FLAG = 1;
 	public static final int JYNI_GC_RESURRECTION_FLAG = 2;
@@ -1186,7 +1286,7 @@ public class JyNI {
 						int result = --confirmationsUnconsumed != 0 ?
 								(JYNI_GC_RESURRECTION_FLAG) :
 								(JYNI_GC_RESURRECTION_FLAG | JYNI_GC_LAST_CONFIRMATION_FLAG);
-						//System.out.println("consumeConfirmation "+handle+" is resurrection");
+						//System.out.println("consumedConfirmation "+handle+" is resurrection");
 						CStubGCHead.class.notify();
 						return result;
 					}
@@ -1214,7 +1314,8 @@ public class JyNI {
 		static visitRestoreCStubReachables defaultInstance
 				= new visitRestoreCStubReachables();
 
-		Set<PyObject> alreadyExplored = new HashSet<>();
+		//Set<PyObject> alreadyExplored = new HashSet<>();
+		IdentityHashMap<PyObject, PyObject> alreadyExplored = new IdentityHashMap<>();
 		public Stack<PyObject> explorationStack = new Stack<>();
 		
 		public static void clear() {
@@ -1223,19 +1324,21 @@ public class JyNI {
 
 		@Override
 		public int visit(PyObject object, Object arg) {
-			if (alreadyExplored.contains(object))
+			//if (alreadyExplored.contains(object))
+			if (alreadyExplored.containsKey(object))
 				return 0;
 			if (continueCStubExplore(object)) {
 				explorationStack.push(object);
 			}
-			alreadyExplored.add(object);
+			alreadyExplored.put(object, object);
 			CStubReachableRestore(object);
 			return 0;
 		}
 	}
 
 	protected static boolean continueCStubExplore(PyObject obj) {
-		if (JyNICriticalObjectSet.contains(obj)) return false;
+		if (obj instanceof CPeerInterface && JyNICriticalObjectSet.contains(
+				((CPeerInterface) obj).getHandle())) return false;
 		if (!gc.isTraversable(obj)) return false;
 		long handle = lookupNativeHandle(obj);
 		JyWeakReferenceGC headRef = JyWeakReferenceGC.lookupJyGCHead(handle);
@@ -1290,54 +1393,55 @@ public class JyNI {
 		//gc.notifyPreFinalization(); (maybe include this later)
 		gc.removeJythonGCFlags(gc.FORCE_DELAYED_FINALIZATION);
 		//Here we care to repair the referenceGraph and to restore weak references.
-		//System.out.println("preProcessCStubGCCycle");
+//		System.out.println("preProcessCStubGCCycle");
 		JyWeakReferenceGC headRef;
 		JyGCHead head;
 		boolean delayFinalization = false;
-		for (long handle: JyNICriticalObjectSet) {
-			//System.out.println("  "+handle);
+		long[] criticalHandles;
+		synchronized (JyNICriticalObjectSet) {
+			/* We cache current handles in synchronized manner before the actual operation
+			 * to avoid concurrent modification exception.
+			 */
+			criticalHandles = new long[JyNICriticalObjectSet.size()];
+			int i = 0;
+			for (long handle: JyNICriticalObjectSet)
+				criticalHandles[i++] = handle;
+		}
+		for (long handle: criticalHandles) {
 			headRef = JyWeakReferenceGC.lookupJyGCHead(handle);
 			/*
 			 * Evaluate JyGC_validateGCHead first, since it has the side-effect to
 			 * update the JyNI-critical's GCHead if necessary. This is also the reason
 			 * why we cannot break this loop on early success.
 			 */
-//			if (headRef == null) {
-//				System.out.println("unexplored!");
-//				//delayFinalization = JyGC_validateGCHead(handle, null) || delayFinalization;
-//			} else {
 			if (headRef != null) {
 				head = headRef.get();
-//				if (head == null) {
-//					System.out.println("j-deleted!");
-//				}// else
 				if (head != null && head instanceof TraversableGCHead) {
 					delayFinalization = JyGC_validateGCHead(handle,
 							((TraversableGCHead) head).toHandleArray()) || delayFinalization;
-//					boolean tmp = JyGC_validateGCHead(handle,
-//							((TraversableGCHead) head).toHandleArray());
-//					delayFinalization = tmp || delayFinalization;
-//					if (tmp)
-//						System.out.println("check update repair: "+JyGC_validateGCHead(handle, ((TraversableGCHead) head).toHandleArray()));
-				} else if (head != null) System.err.println(
-						"JyNI-error: Encountered JyNI-critical with non-traversable JyGCHead! "+headRef.getNativeRef());
+				} else if (head != null)
+					System.err.println(
+							"JyNI-error: Encountered JyNI-critical with non-traversable JyGCHead! "
+							+headRef.getNativeRef());
 			}
 		}
-		if (delayFinalization) {//enable delayed finalization in GC-module
+		if (delayFinalization) {
+			//enable delayed finalization in GC-module
 			//System.out.println("Force delayed finalization...");
 			gc.addJythonGCFlags(gc.FORCE_DELAYED_FINALIZATION);
 		}
+//		System.out.println("preProcessCStubGCCycle done");
 	}
 
 	protected static void suspendPyInstanceFinalizer(PyInstance inst) {
 		FinalizeTrigger ft =
-				   (FinalizeTrigger) JyAttribute.getAttr(inst, JyAttribute.FINALIZE_TRIGGER_ATTR);
+				(FinalizeTrigger) JyAttribute.getAttr(inst, JyAttribute.FINALIZE_TRIGGER_ATTR);
 		if (ft != null) ft.clear();
 	}
 
 	protected static void restorePyInstanceFinalizer(PyInstance inst) {
 		FinalizeTrigger ft =
-				   (FinalizeTrigger) JyAttribute.getAttr(inst, JyAttribute.FINALIZE_TRIGGER_ATTR);
+				(FinalizeTrigger) JyAttribute.getAttr(inst, JyAttribute.FINALIZE_TRIGGER_ATTR);
 		if (ft != null && (ft.flags & FinalizeTrigger.FINALIZED_FLAG) == 0) ft.trigger(inst);
 		else gc.restoreFinalizer(inst);
 	}
@@ -1345,7 +1449,7 @@ public class JyNI {
 //---------------Weak Reference section-------------------
 	
 	protected static ReferenceType createWeakReferenceFromNative(PyObject referent, long handle, PyObject callback) {
-		System.out.println("createWeakReferenceFromNative "+handle);
+//		System.out.println("createWeakReferenceFromNative "+handle);
 		if (referent == null)
 			return new ReferenceType(JyNIEmptyGlobalReference.defaultInstance, callback);
 		ReferenceBackend gref = GlobalRef.newInstance(referent);
@@ -1354,7 +1458,7 @@ public class JyNI {
 	}
 
 	protected static ProxyType createProxyFromNative(PyObject referent, long handle, PyObject callback) {
-		System.out.println("createProxyFromNative "+handle);
+//		System.out.println("createProxyFromNative "+handle);
 		if (referent == null)
 			return new ProxyType(JyNIEmptyGlobalReference.defaultInstance, callback);
 		ReferenceBackend gref = GlobalRef.newInstance(referent);
@@ -1363,7 +1467,7 @@ public class JyNI {
 	}
 
 	protected static CallableProxyType createCallableProxyFromNative(PyObject referent, long handle, PyObject callback) {
-		System.out.println("createCallableProxyFromNative "+handle);
+		//System.out.println("createCallableProxyFromNative "+handle);
 		if (referent == null)
 			return new CallableProxyType(JyNIEmptyGlobalReference.defaultInstance, callback);
 		ReferenceBackend gref = GlobalRef.newInstance(referent);
@@ -1378,5 +1482,13 @@ public class JyNI {
 //			return (GlobalRef) result;
 //		else
 //			return null;
+	}
+
+	public static void listGCLinks(PyObject obj) {
+		System.out.println("GC-Links of "+System.identityHashCode(obj));
+		if (obj instanceof TraversableGCHead) {
+			((TraversableGCHead) obj).printLinks(System.out);
+		} else System.out.println("not a TraversableGCHead");
+		System.out.println();
 	}
 }

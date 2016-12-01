@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -41,6 +43,7 @@ public class CStubGCHead extends DefaultTraversableGCHead implements PyObjectGCH
 
 	@Override
 	public void setPyObject(PyObject object) {
+//		System.out.println("CStubGCHead.setPyObject");
 		this.object = object;
 	}
 
@@ -61,11 +64,13 @@ public class CStubGCHead extends DefaultTraversableGCHead implements PyObjectGCH
 			newHead.gclinks = gclinks;
 			JyNI.JyGC_restoreCStubBackend(handle, object, newHead);
 			new JyWeakReferenceGC(newHead);
+//			System.out.println("Resurrect CStub "+object);
 			JyNI.CStubRestoreAllReachables(object);
 			JyReferenceMonitor.notifyResurrect(handle, object);
 		} else if ((result & JyNI.JYNI_GC_CONFIRMED_FLAG) == 0) {
-			System.err.println("JyNI-Warning: Unconfirmed but finalized CStubGCHead: "+handle);
-			System.err.println("  "+object);
+// We make this temporarily silent. Todo: Investigate warnings!
+			//System.err.println("JyNI-Warning: Unconfirmed but finalized CStubGCHead: "+handle);
+			//System.err.println("  "+object);
 		}
 		if ((result & JyNI.JYNI_GC_LAST_CONFIRMATION_FLAG) != 0)
 			JyNI.postProcessCStubGCCycle();

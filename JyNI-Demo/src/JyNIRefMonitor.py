@@ -1,11 +1,38 @@
 '''
+ * Copyright of JyNI:
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
+ *
+ *
+ * This file is part of JyNI.
+ *
+ * JyNI is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * JyNI is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with JyNI.  If not, see <http://www.gnu.org/licenses/>.
+
+
 Created on 30.06.2013
 
 @author: Stefan Richthofer
 '''
 
 # Note that this script currently has issues under 32bit systems.
-# It appears that this is a JNI-bug; a workaround is known, but not yet implemented.
+# It appears that this is a JNI-bug.
 
 import sys
 #Since invalid paths do no harm, we add several possible paths here, where
@@ -322,5 +349,21 @@ def run3():
 	print "exit"
 	print "===="
 
-run3()
+def run4():
+	import DemoExtension
+
+	JyNI.JyRefMonitor_setMemDebugFlags(1)
+	l = ([0, "test"],)
+	l[0][0] = l
+	DemoExtension.argCountToString(l)
+	del l
+	#l[0][1] = None
+	print "Leaks before GC:"
+	monitor.listLeaks()
+	System.gc()
+	time.sleep(2)
+	print "Leaks after GC:"
+	monitor.listLeaks()
+
+run4()
 #System.getProperties().list(System.out)

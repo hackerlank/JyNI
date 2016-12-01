@@ -1,10 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -23,6 +26,7 @@
  * License along with JyNI.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
 /*
  * JySync.h
  *
@@ -34,50 +38,68 @@
 #define JYSYNC_H_
 
 PyObject* JySync_Init_PyTuple_From_JyTuple(jobject src);
-jobject JySync_Init_JyTuple_From_PyTuple(PyObject* src);
+jobject JySync_Init_JyTuple_From_PyTuple(PyObject* src, jclass subtype);
 
 PyObject* JySync_Init_PyString_From_JyString(jobject src);
-jobject JySync_Init_JyString_From_PyString(PyObject* src);
+jobject JySync_Init_JyString_From_PyString(PyObject* src, jclass subtype);
 
 PyObject* JySync_Init_PyUnicode_From_JyUnicode(jobject src);
-jobject JySync_Init_JyUnicode_From_PyUnicode(PyObject* src);
+jobject JySync_Init_JyUnicode_From_PyUnicode(PyObject* src, jclass subtype);
 
 PyObject* JySync_Init_PyInt_From_JyInt(jobject src);
-jobject JySync_Init_JyInt_From_PyInt(PyObject* src);
+jobject JySync_Init_JyInt_From_PyInt(PyObject* src, jclass subtype);
 
 PyObject* JySync_Init_PyFloat_From_JyFloat(jobject src);
-jobject JySync_Init_JyFloat_From_PyFloat(PyObject* src);
+jobject JySync_Init_JyFloat_From_PyFloat(PyObject* src, jclass subtype);
 
 PyObject* JySync_Init_PyComplex_From_JyComplex(jobject src);
-jobject JySync_Init_JyComplex_From_PyComplex(PyObject* src);
+jobject JySync_Init_JyComplex_From_PyComplex(PyObject* src, jclass subtype);
 
 PyObject* JySync_Init_PyLong_From_JyLong(jobject src);
-jobject JySync_Init_JyLong_From_PyLong(PyObject* src);
+jobject JySync_Init_JyLong_From_PyLong(PyObject* src, jclass subtype);
 
-jobject JySync_Init_JyList_From_PyList(PyObject* src);
+jobject JySync_Init_JyList_From_PyList(PyObject* src, jclass subtype);
 PyObject* JySync_Init_PyList_From_JyList(jobject src);
 
 PyObject* JySync_Init_PySet_From_JySet(jobject src);
 PyObject* JySync_Init_PyFrozenSet_From_JyFrozenSet(jobject src);
 
-jobject JySync_Init_JyClass_From_PyClass(PyObject* src);
+jobject JySync_Init_JyClass_From_PyClass(PyObject* src, jclass subtype);
 PyObject* JySync_Init_PyClass_From_JyClass(jobject src);
 
-jobject JySync_Init_JyInstance_From_PyInstance(PyObject* src);
+jobject JySync_Init_JyInstance_From_PyInstance(PyObject* src, jclass subtype);
 PyObject* JySync_Init_PyInstance_From_JyInstance(jobject src);
-PyObject* JySync_Init_Special_PyInstance(jobject src);
+//PyObject* JySync_Init_Special_PyInstance(jobject src);
 
-jobject JySync_Init_JyMethod_From_PyMethod(PyObject* src);
+jobject JySync_Init_JyMethod_From_PyMethod(PyObject* src, jclass subtype);
 PyObject* JySync_Init_PyMethod_From_JyMethod(jobject src);
 
-jobject JySync_Init_JyWeakReference_From_PyWeakReference(PyObject* src);
+jobject JySync_Init_JyClassMethod_From_PyClassMethod(PyObject* src, jclass subtype);
+PyObject* JySync_Init_PyClassMethod_From_JyClassMethod(jobject src);
+
+jobject JySync_Init_JyStaticMethod_From_PyStaticMethod(PyObject* src, jclass subtype);
+PyObject* JySync_Init_PyStaticMethod_From_JyStaticMethod(jobject src);
+
+jobject JySync_Init_JyDictProxy_From_PyDictProxy(PyObject* src, jclass subtype);
+PyObject* JySync_Init_PyDictProxy_From_JyDictProxy(jobject src);
+
+jobject JySync_Init_JyProperty_From_PyProperty(PyObject* src, jclass subtype);
+PyObject* JySync_Init_PyProperty_From_JyProperty(jobject src);
+
+jobject JySync_Init_JyWeakReference_From_PyWeakReference(PyObject* src, jclass subtype);
 PyObject* JySync_Init_PyWeakReference_From_JyWeakReference(jobject src);
 
-jobject JySync_Init_JyWeakProxy_From_PyWeakProxy(PyObject* src);
+jobject JySync_Init_JyWeakProxy_From_PyWeakProxy(PyObject* src, jclass subtype);
 PyObject* JySync_Init_PyWeakProxy_From_JyWeakProxy(jobject src);
 
-jobject JySync_Init_JyWeakCallableProxy_From_PyWeakCallableProxy(PyObject* src);
+jobject JySync_Init_JyWeakCallableProxy_From_PyWeakCallableProxy(PyObject* src, jclass subtype);
 PyObject* JySync_Init_PyWeakCallableProxy_From_JyWeakCallableProxy(jobject src);
+
+jobject JySync_Init_JyMethodDescr_From_PyMethodDescr(PyObject* src, jclass subtype);
+PyObject* JySync_Init_PyMethodDescr_From_JyMethodDescr(jobject src, PyTypeObject* nonNativeSubtype);
+
+jobject JySync_Init_JyCFunction_From_PyCFunction(PyObject* src, jclass subtype);
+PyObject* JySync_Init_PyCFunction_From_JyBuiltinCallable(jobject src, PyTypeObject* nonNativeSubtype);
 
 void JySync_PyCode_From_JyCode(jobject src, PyObject* dest);
 
@@ -86,6 +108,9 @@ void JySync_PyFunction_From_JyFunction(jobject src, PyObject* dest);
 
 void JySync_JyCell_From_PyCell(PyObject* src, jobject dest);
 void JySync_PyCell_From_JyCell(jobject src, PyObject* dest);
+
+void JySync_JyFrame_From_PyFrame(PyObject* src, jobject dest);
+void JySync_PyFrame_From_JyFrame(jobject src, PyObject* dest);
 
 void JySync_PyType_From_JyType(jobject src, PyObject* dest);
 

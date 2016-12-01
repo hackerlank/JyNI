@@ -1,12 +1,16 @@
 /* This File is based on dictobject.c from CPython 2.7.3 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -284,14 +288,15 @@ PyDict_New(void)
 #endif
 	}*/
 	if (numfree) {
-		//jputs("from free");
+//		jputs("dict from free:");
 		mp = free_list[--numfree];
+//		jputsLong(mp);
 		assert (mp != NULL);
 		assert (Py_TYPE(mp) == &PyDict_Type);
 		/* JyNI-note: Here we assume that the caller would not intend
 		 * to create a stringmap-dict.
 		 */
-		_PyObject_InitJy(mp, &(builtinTypes[DICT_INDEX_TME]));
+		_PyObject_InitJy(mp, &(builtinTypes[TME_INDEX_Dict]));
 		_Py_NewReference((PyObject *)mp);
 		JyNIDebugOp(JY_NATIVE_ALLOC | JY_INLINE_MASK, mp, -1);
 		/*if (mp->ma_fill) {
@@ -311,10 +316,22 @@ PyDict_New(void)
 		//puts("GC_New");
 		//JyNI-todo: Check this:
 		//mp = PyObject_GC_New(PyDictObject, &PyDict_Type);
-		mp = PyObject_New(PyDictObject, &PyDict_Type);
+		//mp = PyObject_New(PyDictObject, &PyDict_Type);
+		/* The Java-part is initialized lazily in JyAlloc.c using a
+		 * constructor inline-lookup. This could be more efficient by
+		 * initializing explicitly, but that currently breaks stuff (see below).
+		 */
+		mp = _JyObject_New(&PyDict_Type, &builtinTypes[TME_INDEX_Dict]);
 		if (mp == NULL)
 			return NULL;
 	}
+// This would save some constructor lookups, but currently breaks
+// something concerning interned strings:
+//	JyObject* jy = AS_JY_NO_GC(mp);
+//	env(NULL);
+//	jy->jy = (*env)->NewObject(env, pyDictClass, pyDictConstructor);
+//	jy->flags |= JY_INITIALIZED_FLAG_MASK;
+
 		/*EMPTY_TO_MINSIZE(mp);
 #ifdef SHOW_ALLOC_COUNT
 		count_alloc++;
@@ -734,22 +751,35 @@ PyDict_New(void)
 PyObject *
 PyDict_GetItem(PyObject *op, PyObject *key)
 {
-	if (!PyDict_Check(op)) return NULL;
+//	int dbg = strcmp(PyString_AS_STRING(key), "range") == 0;
+//	if (dbg) jputs(__FUNCTION__);
+//	if (dbg) jputsPy(key);
+//	if (dbg) jputsLong(op);
+//	if (dbg) jputsPy(op);
+	if (!PyDict_Check(op)) {
+//		if (dbg) jputsLong(__LINE__);
+		return NULL;
+	}
 	env(NULL);
 //	if ((*env)->ExceptionCheck(env)) {
 //		jputs("PyDict_GetItem - previous exception");
 //	}
-	PyObject* result = JyNI_PyObject_FromJythonPyObject(
-				(*env)->CallObjectMethod(env,
-					JyNI_JythonPyObject_FromPyObject(op),
-					pyObject__finditem__,
-					JyNI_JythonPyObject_FromPyObject(key)
-				)
-			);
-	if((*env)->ExceptionCheck(env)) {
-		(*env)->ExceptionClear(env);
-		return NULL;
-	}
+	jobject jop = JyNI_JythonPyObject_FromPyObject(op);
+	ENTER_SubtypeLoop_Safe_ModePy(jop, op, __finditem__)
+//	if (dbg) printf("%i\n", jmid__finditem__ == pyObject__finditem__);
+	jobject jres = (*env)->CallObjectMethod(env, jop, JMID(__finditem__),
+			JyNI_JythonPyObject_FromPyObject(key));
+	PyObject* result = JyNI_PyObject_FromJythonPyObject(jres);
+	LEAVE_SubtypeLoop_Safe_ModePy(jop, __finditem__)
+//	if((*env)->ExceptionCheck(env)) {
+//		if (dbg) jputsLong(__LINE__);
+//		if (dbg) JyNI_jprintJ((*env)->ExceptionOccurred(env));
+//		if (dbg) (*env)->ExceptionDescribe(env);
+//		(*env)->ExceptionClear(env);
+//		return NULL;
+//	}
+//	if (dbg) jputsLong(__LINE__);
+//	if (dbg) jputsLong(result);
 	return result;
 //	return JyNI_PyObject_FromJythonPyObject(
 //			(*env)->CallObjectMethod(env,
@@ -812,15 +842,16 @@ PyDict_GetItem(PyObject *op, PyObject *key)
 int
 PyDict_SetItem(register PyObject *op, PyObject *key, PyObject *value)
 {
+//	int dbg = strcmp(PyString_AS_STRING(key), "range") == 0;
+//	if (dbg) jputs(__FUNCTION__);
+//	if (dbg) jputsPy(key);
+//	if (dbg) jputsLong(op);
+//	if (dbg) jputsPy(op);
 //	register PyDictObject *mp;
 //	register long hash;
 //	register Py_ssize_t n_used;
-//	if (!op) {
-//		jputs("dict is NULL!! 0");
-//	}
 	if (!PyDict_Check(op)) {
 //		PyErr_BadInternalCall();
-		//jputs("return -1...");
 		return -1;
 	}
 //	assert(key);
@@ -838,28 +869,19 @@ PyDict_SetItem(register PyObject *op, PyObject *key, PyObject *value)
 //	}
 //	assert(mp->ma_fill <= mp->ma_mask);  /* at least one empty slot */
 //	n_used = mp->ma_used;
+
+	// JyNI-node: Removing these two lines causes segmentation fault:
 	Py_INCREF(value);
 	Py_INCREF(key);
 
-//	if (!op) {
-//		jputs("dict is NULL!! 1");
-//	}
 	env(-1);
 	jobject jop = JyNI_JythonPyObject_FromPyObject(op);
-//	if (!jop) {
-//		jputs("jdict is NULL!! 2");
-//	} else {
-//		JyNI_jprintJ(jop);
-//		jputsLong((jlong) jop);
-//		JyNI_jprintHash(jop);
-//	}
-//	if ((*env)->IsSameObject(env, jop, NULL)) {
-//		jputs("pseudo null");
-//	}
+	ENTER_SubtypeLoop_Safe_Mode(jop, __setitem__)
 	(*env)->CallVoidMethod(env,
-			jop, pyObject__setitem__,
+			jop, JMID(__setitem__),
 			JyNI_JythonPyObject_FromPyObject(key),
 			JyNI_JythonPyObject_FromPyObject(value));
+	LEAVE_SubtypeLoop_Safe_Mode(jop, __setitem__)
 	return 0;
 
 //	if (insertdict(mp, key, hash, value) != 0)
@@ -925,8 +947,11 @@ PyDict_DelItem(PyObject *op, PyObject *key)
 	Py_DECREF(old_value);
 	Py_DECREF(key);//old_key);
 	env(-1);
-	(*env)->CallVoidMethod(env, JyNI_JythonPyObject_FromPyObject(op), pyObject__delitem__,
+	jobject jop = JyNI_JythonPyObject_FromPyObject(op);
+	ENTER_SubtypeLoop_Safe_ModePy(jop, op, __delitem__)
+	(*env)->CallVoidMethod(env, jop, JMID(__delitem__),
 			JyNI_JythonPyObject_FromPyObject(key));
+	LEAVE_SubtypeLoop_Safe_ModePy(jop, __delitem__)
 	return 0;
 }
 
@@ -1062,29 +1087,29 @@ PyDict_Next(PyObject *op, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
 		return 0;
 
 	jobject obj = (*env)->CallStaticObjectMethod(env, JyNIClass,
-			JyNIGetPyDictionary_Next, JyNI_JythonPyObject_FromPyObject(op), i);
+			JyNI_getPyDictionary_Next, JyNI_JythonPyObject_FromPyObject(op), i);
 	if (obj == NULL) return 0;
 	if (pkey)
 	{
-		PyObject* keyHandle = (PyObject*) (*env)->GetLongField(env, obj, JyNIDictNextResultKeyHandleField);
+		PyObject* keyHandle = (PyObject*) (*env)->GetLongField(env, obj, JyNIDictNextResult_keyHandleField);
 		if (keyHandle != NULL) *pkey = keyHandle;
 		else
 		{
-			jobject jkey = (*env)->GetObjectField(env, obj, JyNIDictNextResultKeyField);
+			jobject jkey = (*env)->GetObjectField(env, obj, JyNIDictNextResult_keyField);
 			*pkey = JyNI_PyObject_FromJythonPyObject(jkey);
 		}
 	}
 	if (pvalue)
 	{
-		PyObject* valueHandle = (PyObject*) (*env)->GetLongField(env, obj, JyNIDictNextResultValueHandleField);
+		PyObject* valueHandle = (PyObject*) (*env)->GetLongField(env, obj, JyNIDictNextResult_valueHandleField);
 		if (valueHandle != NULL) *pvalue = valueHandle;
 		else
 		{
-			jobject jvalue = (*env)->GetObjectField(env, obj, JyNIDictNextResultValueField);
+			jobject jvalue = (*env)->GetObjectField(env, obj, JyNIDictNextResult_valueField);
 			*pvalue = JyNI_PyObject_FromJythonPyObject(jvalue);
 		}
 	}
-	i = (*env)->GetIntField(env, obj, JyNIDictNextResultNewIndexField);
+	i = (*env)->GetIntField(env, obj, JyNIDictNextResult_newIndexField);
 	if (i < 0)
 	{
 		*ppos = -i;
@@ -1142,6 +1167,8 @@ PyDict_Next(PyObject *op, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
 static void
 dict_dealloc(register PyDictObject *mp)
 {
+//	jputs(__FUNCTION__);
+//	jputsLong(mp);
 	JyNIDebugOp(JY_NATIVE_FINALIZE, mp, -1);
 	//register PyDictEntry *ep;
 	//Py_ssize_t fill = mp->ma_fill;
@@ -1222,10 +1249,27 @@ dict_dealloc(register PyDictObject *mp)
 //	Py_ReprLeave((PyObject*)mp);
 //	return 0;
 //}
-//
-//static PyObject *
-//dict_repr(PyDictObject *mp)
-//{
+
+static PyObject *
+dict_repr(PyDictObject *mp)
+{
+//	jputs(__FUNCTION__);
+//	jputs(Py_TYPE(mp)->tp_name);
+	//PyString_FromString("{..dict_repr.}");
+	env(NULL);
+	jobject jop = JyNI_JythonPyObject_FromPyObject(mp);
+//	JyNI_printJInfo(jop);
+
+	ENTER_SubtypeLoop_Safe_ModePy(jop, mp, __repr__)
+	PyObject* result = JyNI_PyObject_FromJythonPyObject(
+			(*env)->CallObjectMethod(env, jop, JMID(__repr__)));
+	LEAVE_SubtypeLoop_Safe_ModePy(jop, __repr__)
+
+	if((*env)->ExceptionCheck(env)) {
+		(*env)->ExceptionClear(env);
+		return NULL;
+	}
+	return result;
 //	Py_ssize_t i;
 //	PyObject *s, *temp, *colon = NULL;
 //	PyObject *pieces = NULL, *result = NULL;
@@ -1300,8 +1344,8 @@ dict_dealloc(register PyDictObject *mp)
 //	Py_XDECREF(colon);
 //	Py_ReprLeave((PyObject *)mp);
 //	return result;
-//}
-//
+}
+
 //static Py_ssize_t
 //dict_length(PyDictObject *mp)
 //{
@@ -1578,57 +1622,62 @@ dict_dealloc(register PyDictObject *mp)
 //	Py_DECREF(d);
 //	return NULL;
 //}
-//
-//static int
-//dict_update_common(PyObject *self, PyObject *args, PyObject *kwds, char *methname)
-//{
-//	PyObject *arg = NULL;
-//	int result = 0;
-//
-//	if (!PyArg_UnpackTuple(args, methname, 0, 1, &arg))
-//		result = -1;
-//
-//	else if (arg != NULL) {
-//		if (PyObject_HasAttrString(arg, "keys"))
-//			result = PyDict_Merge(self, arg, 1);
-//		else
-//			result = PyDict_MergeFromSeq2(self, arg, 1);
-//	}
-//	if (result == 0 && kwds != NULL)
-//		result = PyDict_Merge(self, kwds, 1);
-//	return result;
-//}
-//
-//static PyObject *
-//dict_update(PyObject *self, PyObject *args, PyObject *kwds)
-//{
-//	if (dict_update_common(self, args, kwds, "update") != -1)
-//		Py_RETURN_NONE;
-//	return NULL;
-//}
-//
-///* Update unconditionally replaces existing items.
-//   Merge has a 3rd argument 'override'; if set, it acts like Update,
-//   otherwise it leaves existing items unchanged.
-//
-//   PyDict_{Update,Merge} update/merge from a mapping object.
-//
-//   PyDict_MergeFromSeq2 updates/merges from any iterable object
-//   producing iterable objects of length 2.
-//*/
-//
-//int
-//PyDict_MergeFromSeq2(PyObject *d, PyObject *seq2, int override)
-//{
+
+static int
+dict_update_common(PyObject *self, PyObject *args, PyObject *kwds, char *methname)
+{
+	PyObject *arg = NULL;
+	int result = 0;
+
+	if (!PyArg_UnpackTuple(args, methname, 0, 1, &arg))
+		result = -1;
+
+	else if (arg != NULL) {
+		if (PyObject_HasAttrString(arg, "keys"))
+			result = PyDict_Merge(self, arg, 1);
+		else
+			result = PyDict_MergeFromSeq2(self, arg, 1);
+	}
+	if (result == 0 && kwds != NULL)
+		result = PyDict_Merge(self, kwds, 1);
+	return result;
+}
+
+static PyObject *
+dict_update(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	if (dict_update_common(self, args, kwds, "update") != -1)
+		Py_RETURN_NONE;
+	return NULL;
+}
+
+/* Update unconditionally replaces existing items.
+   Merge has a 3rd argument 'override'; if set, it acts like Update,
+   otherwise it leaves existing items unchanged.
+
+   PyDict_{Update,Merge} update/merge from a mapping object.
+
+   PyDict_MergeFromSeq2 updates/merges from any iterable object
+   producing iterable objects of length 2.
+*/
+
+int
+PyDict_MergeFromSeq2(PyObject *d, PyObject *seq2, int override)
+{
 //	PyObject *it;	   /* iter(seq2) */
 //	Py_ssize_t i;	   /* index into seq2 of current element */
 //	PyObject *item;	 /* seq2[i] */
 //	PyObject *fast;	 /* item as a 2-tuple or 2-list */
-//
-//	assert(d != NULL);
-//	assert(PyDict_Check(d));
-//	assert(seq2 != NULL);
-//
+
+	assert(d != NULL);
+	assert(PyDict_Check(d));
+	assert(seq2 != NULL);
+
+	env(-1);
+	jobject jd = JyNI_JythonPyObject_FromPyObject(d);
+	jobject jseq2 = JyNI_JythonPyObject_FromPyObject(seq2);
+	(*env)->CallVoidMethod(env, jd, pyAbstractDict_mergeFromSeq, jseq2, override);
+
 //	it = PyObject_GetIter(seq2);
 //	if (it == NULL)
 //		return -1;
@@ -1685,30 +1734,44 @@ dict_dealloc(register PyDictObject *mp)
 //Return:
 //	Py_DECREF(it);
 //	return Py_SAFE_DOWNCAST(i, Py_ssize_t, int);
-//}
-//
-//int
-//PyDict_Update(PyObject *a, PyObject *b)
-//{
-//	return PyDict_Merge(a, b, 1);
-//}
-//
-//int
-//PyDict_Merge(PyObject *a, PyObject *b, int override)
-//{
+}
+
+int
+PyDict_Update(PyObject *a, PyObject *b)
+{
+	return PyDict_Merge(a, b, 1);
+}
+
+int
+PyDict_Merge(PyObject *a, PyObject *b, int override)
+{
 //	register PyDictObject *mp, *other;
 //	register Py_ssize_t i;
 //	PyDictEntry *entry;
-//
-//	/* We accept for the argument either a concrete dictionary object,
-//	 * or an abstract "mapping" object.  For the former, we can do
-//	 * things quite efficiently.  For the latter, we only require that
-//	 * PyMapping_Keys() and PyObject_GetItem() be supported.
-//	 */
-//	if (a == NULL || !PyDict_Check(a) || b == NULL) {
-//		PyErr_BadInternalCall();
-//		return -1;
-//	}
+
+	/* We accept for the argument either a concrete dictionary object,
+	 * or an abstract "mapping" object.  For the former, we can do
+	 * things quite efficiently.  For the latter, we only require that
+	 * PyMapping_Keys() and PyObject_GetItem() be supported.
+	 */
+	if (a == NULL || !PyDict_Check(a) || b == NULL) {
+		PyErr_BadInternalCall();
+		return -1;
+	}
+	env(-1);
+	jobject ja = JyNI_JythonPyObject_FromPyObject(a);
+	jobject jb = JyNI_JythonPyObject_FromPyObject(b);
+//	puts(Py_TYPE(a)->tp_name);
+//	if ((*env)->IsSameObject(env, NULL, ja)) puts("a is null");
+//	if ((*env)->IsInstanceOf(env, ja, pyAbstractDictClass)) puts("a is AbstractDict");
+//	if ((*env)->IsInstanceOf(env, ja, pyStringMapClass)) puts("a is StringMap");
+//	if ((*env)->IsInstanceOf(env, ja, pyDictClass)) puts("a is PyDictionary");
+//	if ((*env)->IsInstanceOf(env, ja, pyCPeerClass)) puts("a is PyCPeer");
+//	if (PyType_IsSubtype(Py_TYPE(a), &PyDict_Type)) puts("a is dict-subtype");
+	(*env)->CallVoidMethod(env, ja, pyAbstractDict_merge, jb, override);
+//	if (((*env)->IsInstanceOf(a, pyDictClass))
+//			(*env)->CallObjectMethod(env, a, pyDictMerge, b);
+
 //	mp = (PyDictObject*)a;
 //	if (PyDict_Check(b)) {
 //		other = (PyDictObject*)b;
@@ -1787,24 +1850,33 @@ dict_dealloc(register PyDictObject *mp)
 //			/* Iterator completed, via error */
 //			return -1;
 //	}
-//	return 0;
-//}
-//
-//static PyObject *
-//dict_copy(register PyDictObject *mp)
-//{
-//	return PyDict_Copy((PyObject*)mp);
-//}
-//
-//PyObject *
-//PyDict_Copy(PyObject *o)
-//{
+	return 0;
+}
+
+static PyObject *
+dict_copy(register PyDictObject *mp)
+{
+	return PyDict_Copy((PyObject*)mp);
+}
+
+PyObject *
+PyDict_Copy(PyObject *o)
+{
 //	PyObject *copy;
 //
-//	if (o == NULL || !PyDict_Check(o)) {
-//		PyErr_BadInternalCall();
-//		return NULL;
-//	}
+	if (o == NULL || !PyDict_Check(o)) {
+		PyErr_BadInternalCall();
+		return NULL;
+	}
+	env(NULL);
+	jobject backend = JyNI_JythonPyObject_FromPyObject(o);
+	jobject cpy = (*env)->CallObjectMethod(env, backend, pyAbstractDict_copy);
+//	if ((*env)->IsInstanceOf(env, backend, pyStringMapClass))
+//		cpy = (*env)->CallObjectMethod(env, backend, pyStringMapCopy);
+//	else //if ((*env)->IsInstanceOf(env, backend, pyDictClass))
+//		cpy = (*env)->CallObjectMethod(env, backend, pyDictCopy);
+	return JyNI_PyObject_FromJythonPyObject(cpy);
+
 //	copy = PyDict_New();
 //	if (copy == NULL)
 //		return NULL;
@@ -1812,20 +1884,22 @@ dict_dealloc(register PyDictObject *mp)
 //		return copy;
 //	Py_DECREF(copy);
 //	return NULL;
-//}
+}
 
 Py_ssize_t
 PyDict_Size(PyObject *mp)
 {
-	//puts("pyDictSize");
-	//return -1;
 	if (mp == NULL || !PyDict_Check(mp)) {
 
 		PyErr_BadInternalCall();
 		return -1;
 	}
 	env(-1);
-	return (Py_ssize_t) (*env)->CallIntMethod(env, JyNI_JythonPyObject_FromPyObject(mp), pyObject__len__);
+	jobject jmp = JyNI_JythonPyObject_FromPyObject(mp);
+	ENTER_SubtypeLoop_Safe_ModePy(jmp, mp, __len__)
+	Py_ssize_t result = (Py_ssize_t) (*env)->CallIntMethod(env, jmp, JMID(__len__));
+	LEAVE_SubtypeLoop_Safe_ModePy(jmp, __len__)
+	return result;
 	//return (Py_ssize_t) (*env)->CallIntMethod(env, JyNI_JythonPyObject_FromPyObject(mp), pyDictSize);
 //	return ((PyDictObject *)mp)->ma_used;
 }
@@ -2440,7 +2514,7 @@ PyDict_Contains(PyObject *op, PyObject *key)
 	jobject k = JyNI_JythonPyObject_FromPyObject(key);
 	jboolean result = (*env)->CallBooleanMethod(env,
 		dict,
-		pyObject__contains__,
+		pyObject___contains__,
 		k
 	);
 	if ((*env)->ExceptionCheck(env)) {
@@ -2490,13 +2564,16 @@ PyDict_Contains(PyObject *op, PyObject *key)
 static PyObject *
 dict_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+	//if (type == &PyDict_Type)
+//	jputs(__FUNCTION__);
+//	jputs(type->tp_name);
 	PyObject *self;
 
 	assert(type != NULL && type->tp_alloc != NULL);
 	self = type->tp_alloc(type, 0);
-	if (self != NULL) {
-		PyDictObject *d = (PyDictObject *)self;
-		/*
+//	if (self != NULL) {
+//		PyDictObject *d = (PyDictObject *)self;
+		/* JyNI-todo: fix this
 		// It's guaranteed that tp->alloc zeroed out the struct.
 		assert(d->ma_table == NULL && d->ma_fill == 0 && d->ma_used == 0);
 		INIT_NONZERO_DICT_SLOTS(d);
@@ -2514,16 +2591,17 @@ dict_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 		else
 			count_untracked++;
 #endif*/
-	}
+//	}
 	return self;
 }
 
-//static int
-//dict_init(PyObject *self, PyObject *args, PyObject *kwds)
-//{
-//	return dict_update_common(self, args, kwds, "dict");
-//}
-//
+static int
+dict_init(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	return dict_update_common(self, args, kwds, "dict");
+	//return 0;
+}
+
 //static PyObject *
 //dict_iter(PyDictObject *dict)
 //{
@@ -2544,14 +2622,14 @@ PyDoc_STRVAR(dictionary_doc,
 PyTypeObject PyDict_Type = {
 	PyVarObject_HEAD_INIT(&PyType_Type, 0)
 	"dict",
-	sizeof(PyDictObject),
+	sizeof(PyObject),//sizeof(PyDictObject),
 	0,
 	(destructor)dict_dealloc,                   /* tp_dealloc */
 	0,//(printfunc)dict_print,                  /* tp_print */
 	0,                                          /* tp_getattr */
 	0,                                          /* tp_setattr */
 	0,//(cmpfunc)dict_compare,                  /* tp_compare */
-	0,//(reprfunc)dict_repr,                    /* tp_repr */
+	(reprfunc)dict_repr,                        /* tp_repr */
 	0,                                          /* tp_as_number */
 	0,//&dict_as_sequence,                      /* tp_as_sequence */
 	0,//&dict_as_mapping,                       /* tp_as_mapping */
@@ -2578,7 +2656,7 @@ PyTypeObject PyDict_Type = {
 	0,                                          /* tp_descr_get */
 	0,                                          /* tp_descr_set */
 	0,                                          /* tp_dictoffset */
-	0,//dict_init,                              /* tp_init */
+	dict_init,                                  /* tp_init */
 	PyType_GenericAlloc,                        /* tp_alloc */
 	dict_new,                                   /* tp_new */
 	PyObject_Free,//PyObject_GC_Del,            /* tp_free */
@@ -2589,14 +2667,15 @@ PyTypeObject PyDict_Type = {
 PyObject* PyDict_GetItemStringJy(PyObject* v, jobject key)
 {
 	//if (!PyDict_Check(op)) return NULL;
-	//puts("PyDict_GetItemStringJy");
+//	jputs(__FUNCTION__);
 	env(NULL);
-	return JyNI_PyObject_FromJythonPyObject(
-			(*env)->CallObjectMethod(env,
-				JyNI_JythonPyObject_FromPyObject(v),
-				pyObject__finditem__, key
-			)
-		);
+	jobject jv = JyNI_JythonPyObject_FromPyObject(v);
+	ENTER_SubtypeLoop_Safe_ModePy(jv, v, __finditem__)
+	jobject result = (*env)->CallObjectMethod(env,
+			jv, JMID(__finditem__), key);
+	LEAVE_SubtypeLoop_Safe_ModePy(jv, __finditem__)
+	PyObject* res = JyNI_PyObject_FromJythonPyObject(result);
+	return res;
 //	return JyNI_PyObject_FromJythonPyObject(
 //			(*env)->CallObjectMethod(env,
 //				JyNI_JythonPyObject_FromPyObject(v),
@@ -2612,13 +2691,13 @@ PyDict_GetItemString(PyObject *v, const char *key)
 {
 //	jputs("PyDict_GetItemString:");
 //	jputs(key);
-	if (!v) jputs("dict is NULL");
-	if (!v->ob_type) jputs("type of dict is NULL");
+//	if (!v) jputs("dict is NULL");
+//	if (!v->ob_type) jputs("type of dict is NULL");
 	if (!PyDict_Check(v)) {
 		return NULL;
 	}
 	env(NULL);
-	return PyDict_GetItemStringJy(v, (*env)->CallStaticObjectMethod(env, pyPyClass, pyPyNewString, (*env)->NewStringUTF(env, key)));
+	return PyDict_GetItemStringJy(v, (*env)->CallStaticObjectMethod(env, pyPyClass, pyPy_newString, (*env)->NewStringUTF(env, key)));
 	/*PyObject *kv, *rv;
 	kv = PyString_FromString(key);
 	if (kv == NULL)
@@ -2628,11 +2707,40 @@ PyDict_GetItemString(PyObject *v, const char *key)
 	return rv;*/
 }
 
+//PyTypeObject* tmpObserved = NULL;
+//PyObject* PyDict_GetItemStringJy2(PyObject* v, jobject key, PyTypeObject* tp)
+//{
+//	env(NULL);
+//	jobject jresult = (*env)->CallObjectMethod(env,
+//			JyNI_JythonPyObject_FromPyObject(v),
+//			pyObject__finditem__, key
+//		);
+//	jputsLong(__LINE__);
+//	jputs(tp->tp_name);
+//	tmpObserved = tp;
+//	PyObject* result = JyNI_PyObject_FromJythonPyObject(jresult);
+//	tmpObserved = NULL;
+//	jputsLong(__LINE__);
+//	jputs(tp->tp_name);
+//	return result;
+//}
+//
+//PyObject *
+//PyDict_GetItemString2(PyObject *v, const char *key, PyTypeObject* tp)
+//{
+//	jputs(__FUNCTION__);
+//	jputs(key);
+//	env(NULL);
+//	return PyDict_GetItemStringJy2(v,
+//			(*env)->CallStaticObjectMethod(env, pyPyClass, pyPyNewString, (*env)->NewStringUTF(env, key)),
+//			tp);
+//}
+
 int
 PyDict_SetItemString(PyObject *v, const char *key, PyObject *item)
 {
-	//puts("PyDict_SetItemString");
-	//puts(key);
+//	jputs("PyDict_SetItemString");
+//	jputs(key);
 	if (!PyDict_Check(v)) {
 		return -1;
 	}
@@ -2643,11 +2751,14 @@ PyDict_SetItemString(PyObject *v, const char *key, PyObject *item)
 
 	env(-1);
 	jobject jitem = JyNI_JythonPyObject_FromPyObject(item);
+	jobject jv = JyNI_JythonPyObject_FromPyObject(v);
+	ENTER_SubtypeLoop_Safe_ModePy(jv, v, __setitem__)
 	(*env)->CallVoidMethod(env,
-			JyNI_JythonPyObject_FromPyObject(v), pyObject__setitem__,
+			jv, JMID(__setitem__),
 			//(*env)->NewObject(env, pyStringClass, pyStringByJStringConstructor, (*env)->NewStringUTF(env, key)),
-			(*env)->CallStaticObjectMethod(env, pyPyClass, pyPyNewString, (*env)->NewStringUTF(env, key)),
+			(*env)->CallStaticObjectMethod(env, pyPyClass, pyPy_newString, (*env)->NewStringUTF(env, key)),
 			jitem);
+	LEAVE_SubtypeLoop_Safe_ModePy(jv, __setitem__)
 	return 0;
 	/*PyObject *kv;
 	int err;
@@ -2664,7 +2775,7 @@ int
 PyDict_DelItemString(PyObject *v, const char *key)
 {
 	env(-1);
-	jobject key2 = (*env)->CallStaticObjectMethod(env, pyPyClass, pyPyNewString, (*env)->NewStringUTF(env, key));
+	jobject key2 = (*env)->CallStaticObjectMethod(env, pyPyClass, pyPy_newString, (*env)->NewStringUTF(env, key));
 	if (!PyDict_Check(v)) {
 		//PyErr_BadInternalCall();
 		return -1;
@@ -2674,8 +2785,10 @@ PyDict_DelItemString(PyObject *v, const char *key)
 
 	Py_DECREF(old_value);
 	//Py_DECREF(key);//old_key);
-
-	(*env)->CallVoidMethod(env, JyNI_JythonPyObject_FromPyObject(v), pyObject__delitem__, key2);
+	jobject jv = JyNI_JythonPyObject_FromPyObject(v);
+	ENTER_SubtypeLoop_Safe_ModePy(jv, v, __delitem__)
+	(*env)->CallVoidMethod(env, jv, JMID(__delitem__), key2);
+	LEAVE_SubtypeLoop_Safe_ModePy(jv, __delitem__);
 	return 0;
 //	PyObject *kv;
 //	int err;

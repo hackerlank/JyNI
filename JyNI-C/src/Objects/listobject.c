@@ -1,12 +1,16 @@
 /* This File is based on listobject.c from CPython 2.7.4 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -162,7 +166,7 @@ PyList_New(Py_ssize_t size)
 	if (numfree) {
 		numfree--;
 		op = free_list[numfree];
-		_PyObject_GC_InitJy(op, &(builtinTypes[LIST_INDEX_TME]));
+		_PyObject_GC_InitJy(op, &(builtinTypes[TME_INDEX_List]));
 		_Py_NewReference((PyObject *)op);
 		JyNIDebug(JY_NATIVE_ALLOC_GC | JY_INLINE_MASK, op, AS_JY_WITH_GC(op), size, PyList_Type.tp_name);
 #ifdef SHOW_ALLOC_COUNT

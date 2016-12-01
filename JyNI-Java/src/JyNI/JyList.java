@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -104,6 +106,7 @@ public class JyList extends AbstractList<PyObject> implements TraversableGCHead,
 	}
 
 	public void setPyObject(PyObject object) {
+//		System.out.println("JyList.setPyObject");
 		frontend = new WeakReference<>(object);
 	}
 
@@ -117,7 +120,13 @@ public class JyList extends AbstractList<PyObject> implements TraversableGCHead,
 
 	@Override
 	public int setLink(int index, JyGCHead link) {
-		return DefaultTraversableGCHead.setLink(headLinks, index, link);
+//		System.out.println(this.getClass()+".setLink ("+System.identityHashCode(this)+") "+index);
+		int result = DefaultTraversableGCHead.setLink(headLinks, index, link);
+		if (result == 1) {
+			headLinks = link;
+			return 0;
+		}
+		return result;
 	}
 
 	@Override
@@ -143,6 +152,16 @@ public class JyList extends AbstractList<PyObject> implements TraversableGCHead,
 	@Override
 	public long[] toHandleArray() {
 		return DefaultTraversableGCHead.toHandleArray(headLinks);
+	}
+
+	@Override
+	public void ensureSize(int size) {
+		headLinks = DefaultTraversableGCHead.ensureSize(headLinks, size);
+	}
+
+	@Override
+	public void printLinks(java.io.PrintStream out) {
+		DefaultTraversableGCHead.printLinksAsHashes(headLinks, out);
 	}
 
 	@Override

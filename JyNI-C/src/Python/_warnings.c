@@ -1,12 +1,16 @@
 /* This File is based on _warnings.c from CPython 2.7.3 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -736,12 +740,26 @@ warnings_warn_explicit(PyObject *self, PyObject *args, PyObject *kwds)
 int
 PyErr_WarnEx(PyObject *category, const char *text, Py_ssize_t stack_level)
 {
+//	jputs(__FUNCTION__);
+//	jPrintCStackTrace();
 	env(-1);
+//	if ((*env)->ExceptionCheck(env)) {
+//		jputs(__FUNCTION__);
+//		jputs("Exception before");
+//		(*env)->ExceptionDescribe(env);
+//	}
 	jstring message = (*env)->NewStringUTF(env, text);
 	if (message == NULL) return -1;
 	if (category == NULL) category = PyExc_RuntimeWarning;
-	(*env)->CallStaticVoidMethod(env, pyPyClass, pyPyWarningStck,
+	(*env)->CallStaticVoidMethod(env, pyPyClass, pyPy_warningStck,
 			JyNI_JythonExceptionType_FromPyExceptionType(category), message, stack_level);
+
+//	if ((*env)->ExceptionCheck(env)) {
+//		jputs(__FUNCTION__);
+//		jputs("Exception after");
+//		(*env)->ExceptionDescribe(env);
+//	}
+//	jputs("PyErr_WarnEx done");
 	return 0;
 	/*PyObject *res;//Py_Py3kWarningFlag
 	PyObject *message = PyString_FromString(text);
@@ -781,7 +799,7 @@ PyErr_WarnExplicit(PyObject *category, const char *text,
 	jstring message = (*env)->NewStringUTF(env, text);
 	if (message == NULL) return -1;
 	if (category == NULL) category = PyExc_RuntimeWarning;
-	(*env)->CallStaticVoidMethod(env, pyPyClass, pyPyExplicitWarning,
+	(*env)->CallStaticVoidMethod(env, pyPyClass, pyPy_explicitWarning,
 			JyNI_JythonExceptionType_FromPyExceptionType(category), message,
 			(*env)->NewStringUTF(env, filename_str), (*env)->NewStringUTF(env, module_str),
 			JyNI_JythonPyObject_FromPyObject(registry));

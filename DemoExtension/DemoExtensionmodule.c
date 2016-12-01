@@ -65,6 +65,19 @@ intSquare(PyObject *self, PyObject *args)
 	return PyInt_FromLong(l*l);
 }
 
+PyObject *
+intSquare1(PyObject *self, PyObject *integer)
+{
+	long int l = PyInt_AS_LONG(integer);
+	return PyInt_FromLong(l*l);
+}
+
+PyObject *
+refcount(PyObject *self, PyObject *object)
+{
+	return PyInt_FromLong(object->ob_refcnt);
+}
+
 PyObject*
 keywordTest(PyObject* self, PyObject* args, PyObject* kw)
 {
@@ -245,6 +258,181 @@ createTupleSelfContaining(PyObject* self, PyObject* args)
 	return tuple;
 }
 
+PyObject*
+booleanToInt(PyObject* self, PyObject* boolean)
+{
+	if (boolean == Py_True) return PyInt_FromLong(1);
+	else if (boolean == Py_False) return PyInt_FromLong(0);
+	else Py_RETURN_NONE;
+}
+
+PyObject*
+intToBoolean(PyObject* self, PyObject* integer)
+{
+	long int l = PyInt_AS_LONG(integer);
+	//For debugging reasons we make a strict 0/1 conversion here.
+	//(rather than 1 for non-NULL)
+	if (l == 1) Py_RETURN_TRUE;
+	else if (l == 0) Py_RETURN_FALSE;
+	else Py_RETURN_NONE;
+}
+
+PyObject*
+nativeDictGet(PyObject* self, PyObject* args)
+{
+	PyObject* dict = PyTuple_GET_ITEM(args, 0);
+	PyObject* key = PyTuple_GET_ITEM(args, 1);
+	return PyDict_GetItem(dict, key);
+}
+
+PyObject*
+nativeDictCreate(PyObject* self, PyObject* args)
+{
+	PyObject* dct = PyDict_New();
+	Py_ssize_t ds = PyDict_Size(dct);
+	return PyInt_FromLong(ds);
+}
+
+PyObject*
+newstyleCheck(PyObject* self, PyObject* args)
+{
+	PyObject* nobj = PyTuple_GET_ITEM(args, 0);
+//	if (nobj && PyString_Check(nobj))
+//		puts(PyString_AS_STRING(nobj));
+	if (nobj) Py_RETURN_TRUE;
+	else if (nobj == NULL) Py_RETURN_FALSE;
+	else Py_RETURN_NONE;
+}
+
+PyObject*
+newstyleCheckSubtype(PyObject* self, PyObject* args)
+{
+	PyObject* nobj = PyTuple_GET_ITEM(args, 0);
+	PyTypeObject* supertype = (PyTypeObject*) PyTuple_GET_ITEM(args, 1);
+	if (nobj && supertype)
+	{
+		if (PyType_IsSubtype(Py_TYPE(nobj), supertype)) Py_RETURN_TRUE;
+		else Py_RETURN_FALSE;
+	} else
+		Py_RETURN_NONE;
+}
+
+PyObject*
+importAPIandMethodDescrTest(PyObject* self, PyObject* args)
+{
+//	puts(__FUNCTION__);
+	PyObject* moduleDict = PyImport_GetModuleDict();
+	PyObject* builtinModule = PyDict_GetItemString(moduleDict, "__builtin__");
+	Py_XDECREF(moduleDict);
+	PyObject* importFunction;
+	PyObject* attrStr = PyString_FromString("__import__");
+	PyTypeObject* tp = Py_TYPE(builtinModule);  //Borrowed ref, so don't decref!
+//	puts(tp->tp_name);
+//	puts(PyString_AS_STRING(PyObject_Str(builtinModule)));
+	if (strcmp(tp->tp_name, "module") != 0) return PyInt_FromLong(-__LINE__);
+	if (strcmp(PyString_AS_STRING(PyObject_Str(builtinModule)),
+			"<module '__builtin__' (built-in)>") != 0) return PyInt_FromLong(-__LINE__);
+//	PyObject* range = PyObject_GetAttrString(builtinModule, "range");
+	if (tp->tp_getattro) {
+		importFunction = tp->tp_getattro(builtinModule, attrStr);
+	}
+	Py_XDECREF(builtinModule);
+	Py_XDECREF(attrStr);
+//	puts(PyString_AS_STRING(PyObject_Str(importFunction)));
+//	puts(PyString_AS_STRING(PyObject_Str(Py_TYPE(importFunction))));
+	if (strcmp(PyString_AS_STRING(PyObject_Str(importFunction)),
+			"<built-in function __import__>") != 0) return PyInt_FromLong(-__LINE__);
+	if (strcmp(PyString_AS_STRING(PyObject_Str(Py_TYPE(importFunction))),
+			"<type 'builtin_function_or_method'>") != 0) return PyInt_FromLong(-__LINE__);
+
+	PyObject* threadingname = PyString_FromString("threading");
+	PyObject* py_level = PyInt_FromLong(1);
+	PyObject* global_dict = PyDict_New();
+	PyObject* empty_dict = PyDict_New();
+	PyObject* list = PyList_New(0);
+	PyObject* module = PyObject_CallFunctionObjArgs(importFunction,
+			threadingname, global_dict, empty_dict, list, py_level, NULL);
+	Py_XDECREF(threadingname);
+	Py_XDECREF(py_level);
+	Py_XDECREF(global_dict);
+	Py_XDECREF(empty_dict);
+	Py_XDECREF(list);
+//	puts(PyString_AS_STRING(PyObject_Str(module)));
+	if (strncmp(PyString_AS_STRING(PyObject_Str(module)),
+			"<module 'threading'", 19) != 0) return PyInt_FromLong(-__LINE__);
+
+	PyObject *lockname = PyString_FromString("Lock");
+	PyObject* locktp = NULL;
+	PyTypeObject* tpl = Py_TYPE(module); //Borrowed ref, so don't decref!
+//	puts(PyString_AS_STRING(PyObject_Str(tpl)));
+	if (!locktp && tpl->tp_getattro) {
+//		printf("%s %i\n", __FUNCTION__, __LINE__);
+		locktp = tpl->tp_getattro(module, lockname);
+	}
+	if (!locktp && tpl->tp_getattr) {
+//		printf("%s %i\n", __FUNCTION__, __LINE__);
+		locktp = tpl->tp_getattr(module, PyString_AS_STRING(lockname));
+	}
+	if (!locktp)
+		locktp = PyObject_GetAttr(module, lockname);
+	Py_XDECREF(module);
+	Py_XDECREF(lockname);
+	PyObject* lock = PyObject_Call(locktp, PyTuple_New(0), NULL);
+//	puts("getting __enter__...");
+	PyObject* __enter__ = _PyType_Lookup(locktp, PyString_FromString("__enter__"));
+	Py_XDECREF(locktp);
+
+//	puts(PyString_AS_STRING(PyObject_Str(locktp)));
+//	puts(PyString_AS_STRING(PyObject_Str(Py_TYPE(lock))));
+//	puts(PyString_AS_STRING(PyObject_Str(lock)));
+	if (strcmp(PyString_AS_STRING(PyObject_Str(locktp)),
+				"<type '_threading.Lock'>") != 0) return PyInt_FromLong(-__LINE__);
+	if (strcmp(PyString_AS_STRING(PyObject_Str(Py_TYPE(lock))),
+				"<type '_threading.Lock'>") != 0) return PyInt_FromLong(-__LINE__);
+	if (strcmp(PyString_AS_STRING(PyObject_Str(lock)),
+				"<_threading.Lock owner=None locked=False>") != 0)
+		return PyInt_FromLong(-__LINE__);
+
+	//PyObject* __enter__ = PyObject_GetAttrString(lock, "__enter__");
+//	puts("got __enter__:");
+//	puts(PyString_AS_STRING(PyObject_Str(__enter__)));
+	if (strcmp(PyString_AS_STRING(PyObject_Str(__enter__)),
+					"<method '__enter__' of 'Lock' objects>") != 0)
+		return PyInt_FromLong(-__LINE__);
+	if (__enter__) {
+//		puts("__enter__ not NULL");
+		descrgetfunc f = Py_TYPE(__enter__)->tp_descr_get;
+		if (!f) {
+			//puts("descrget is NULL");
+			//Py_INCREF(__enter__);
+			return PyInt_FromLong(-__LINE__);
+		} //else {
+//			puts("descrget is non-NULL");
+//			//__enter__ = f(__enter__, obj, (PyObject *)tp);
+//		}
+	} else return PyInt_FromLong(-__LINE__);
+//	puts(Py_TYPE(__enter__)->tp_name);
+	if (strcmp(Py_TYPE(__enter__)->tp_name, "method_descriptor") != 0)
+		return PyInt_FromLong(-__LINE__);
+//	if (PyType_HasFeature(Py_TYPE(__enter__), Py_TPFLAGS_HEAPTYPE))
+//		puts("heaptype");
+	PyObject* argSelf = PyTuple_New(1);
+	PyTuple_SetItem(argSelf, 0, lock);
+	PyObject* p7 = PyObject_Call(__enter__, argSelf, NULL);
+//	puts(PyString_AS_STRING(PyObject_Str(p7)));
+	if (strcmp(PyString_AS_STRING(PyObject_Str(p7)),
+			"<_threading.Lock owner='MainThread' locked=True>") != 0)
+		return PyInt_FromLong(-__LINE__);
+//	puts("decref...");
+	Py_XDECREF(importFunction);
+	Py_XDECREF(p7);
+	Py_XDECREF(argSelf);
+	Py_XDECREF(lock);
+	Py_XDECREF(__enter__);
+//	puts("conversion test done");
+	return PyInt_FromLong(0);
+}
+
 PyMethodDef DemoExtensionMethods[] = {
 	{"hello_world", hello_world, METH_NOARGS, "Hello World method."},
 	{"longTests", longTests, METH_VARARGS, "Prints out some test-data about PyLong."},
@@ -256,6 +444,7 @@ PyMethodDef DemoExtensionMethods[] = {
 	{"printInt", printInt, METH_VARARGS, "Prints out the int and returns nothing."},
 	{"printString", printString, METH_VARARGS, "Prints out the string and returns nothing."},
 	{"intSquare", intSquare, METH_VARARGS, "Returns the square of the given int."},
+	{"intSquare1", intSquare1, METH_O, "Variant of intSquare using the METH_O flag."},
 	{"argCountToString", argCountToString, METH_VARARGS, "Returns number of arguments as string."},
 	{"concatFirstWithLastString", concatFirstWithLastString, METH_VARARGS, "Concatenates first with last element. Returns empty string, if less than two args are available."},
 	{"keywordTest", keywordTest, METH_VARARGS | METH_KEYWORDS, "Tests working with keywords."},
@@ -263,11 +452,20 @@ PyMethodDef DemoExtensionMethods[] = {
 	{"unicodeTest", unicodeTest, METH_VARARGS, "Test JyNI's unicode support by converting forth and back."},
 	{"createListSelfContaining", createListSelfContaining, METH_NOARGS, "Natively create a self-containing list."},
 	{"createTupleSelfContaining", createTupleSelfContaining, METH_NOARGS, "Natively create a self-containing tuple."},
+	{"booleanToInt", booleanToInt, METH_O, "Converts True to one, False to zero, everything else to None."},
+	{"intToBoolean", intToBoolean, METH_O, "Converts one to True, zero to False, everything else to None."},
+	{"nativeDictGet", nativeDictGet, METH_VARARGS, "Looks up a key in a dict."},
+	{"nativeDictCreate", nativeDictCreate, METH_NOARGS, "Creates a dict on native site."},
+	{"newstyleCheck", newstyleCheck, METH_VARARGS, "Checks integrity of new-style instance conversion."},
+	{"newstyleCheckSubtype", newstyleCheckSubtype, METH_VARARGS, "Checks subtype consistence new-style conversion."},
+	{"refcount", refcount, METH_VARARGS, "Provides the current native refcount of the given object."},
+	{"importAPIandMethodDescrTest", importAPIandMethodDescrTest, METH_NOARGS, "Tests some aspects of native import API."},
 	{NULL, NULL, 0, NULL}		/* Sentinel */
 };
 
 PyMODINIT_FUNC
 initDemoExtension(void)
 {
+	//PyErr_Format(PyExc_ImportError, "test-error");
 	(void) Py_InitModule3("DemoExtension", DemoExtensionMethods, "This is a pure demo extension.");
 }

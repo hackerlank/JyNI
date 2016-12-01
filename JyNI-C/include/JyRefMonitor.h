@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -78,6 +80,6 @@ void JyRefMonitor_setMemDebug(JNIEnv *env, jclass class, jint flags);
 
 // Memory-tracking
 void JyRefMonitor_addAction(jshort action, PyObject* op, JyObject* object,
-		size_t size, char* type, char* function, char* file, jint line);
+		size_t size, const char* type, const char* function, const char* file, jint line);
 void JyRefMonitor_addAction2(jshort action, JyObject* object, JyObject* object2,
-		size_t size, char* type, char* function, char* file, jint line);
+		size_t size, const char* type, const char* function, const char* file, jint line);

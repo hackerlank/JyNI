@@ -1,12 +1,16 @@
 /* This File is based on gcmodule.c from CPython 2.7.3 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -48,14 +52,9 @@
 
 //#include "Python.h"
 #include "JyNI.h"
+#include "JyNI-Debug.h"
 //#include "frameobject.h"		// for PyFrame_ClearFreeList
 
-
-// Get an object's GC head
-#define AS_GC(o) ((PyGC_Head *)(o)-1)
-
-// Get the object given the GC head
-#define FROM_GC(g) ((PyObject *)(((PyGC_Head *)g)+1))
 
 // *** Global GC state ***
 
@@ -106,7 +105,8 @@ static void pushExStack(PyObject* op) {
 			stack->stack[stack->position++] = op;
 		} else {
 			Ex_Stack_Block* newNext = (Ex_Stack_Block*) malloc(sizeof(Ex_Stack_Block));
-			newNext->stack[newNext->position++] = op;
+			newNext->stack[0] = op;
+			newNext->position = 1;
 			newNext->next = stack;
 			explorationStack.next = newNext;
 		}
@@ -207,6 +207,7 @@ static jboolean isExStackEmpty() {
 	return !explorationStack.next && explorationStack.position == 0;
 }
 
+/* Nothing wrong with this method, but currently not used.
 static jint exStackSize() {
 	jint result = explorationStack.position;
 	Ex_Stack_Block* stack = explorationStack.next;
@@ -216,6 +217,7 @@ static jint exStackSize() {
 	}
 	return result;//-exStackGapCount;
 }
+*/
 
 static jint exStackBlockCount() {
 	jint result = 1;
@@ -344,15 +346,9 @@ static jint exStackBlockCount() {
 #define GC_REACHABLE					_PyGC_REFS_REACHABLE
 #define GC_TENTATIVELY_UNREACHABLE	  _PyGC_REFS_TENTATIVELY_UNREACHABLE
 
-#define GC_UNEXPLORED _PyGC_REFS_UNEXPLORED
-#define GC_EXPLORING _PyGC_REFS_EXPLORING
-#define GC_EXPLORED _PyGC_REFS_EXPLORED
-
-#define IS_UNEXPLORED(op) \
-	(AS_GC(op)->gc.gc_refs < 0 && AS_GC(op)->gc.gc_refs > GC_EXPLORING)
-
-#define IS_EXPLORED(op) \
-	(AS_GC(op)->gc.gc_refs > 0 || AS_GC(op)->gc.gc_refs < GC_EXPLORING)
+//not used
+//#define IS_EXPLORED(op) \
+//	(IsReadyType(op) || (AS_GC(op)->gc.gc_refs > 0 || AS_GC(op)->gc.gc_refs < GC_EXPLORING))
 
 #define IS_TRACKED(o) ((AS_GC(o))->gc.gc_refs != GC_UNTRACKED)
 #define IS_REACHABLE(o) ((AS_GC(o))->gc.gc_refs == GC_REACHABLE)
@@ -1592,20 +1588,21 @@ _PyGC_Dump(PyGC_Head *g)
 
 static inline jsize JyObject_FixedGCSize(PyObject* pyObject)
 {
-	if (Py_TYPE(pyObject) == &PyTuple_Type)    return Py_SIZE(pyObject);
-	if (Py_TYPE(pyObject) == &PyFunction_Type) return 5;
-	if (Py_TYPE(pyObject) == &PyInstance_Type) return 2;
-	if (Py_TYPE(pyObject) == &PyMethod_Type)   return 3;
-	if (Py_TYPE(pyObject) == &PyClass_Type)    return 6;
-	if (Py_TYPE(pyObject) == &PyCell_Type)     return 1;
-	if (Is_StaticTypeObject(pyObject))         return 7;
+	if (Py_TYPE(pyObject) == &PyTuple_Type)     return Py_SIZE(pyObject);
+	if (Py_TYPE(pyObject) == &PyCFunction_Type) return 2;
+	if (Py_TYPE(pyObject) == &PyFunction_Type)  return 5; //6
+	if (Py_TYPE(pyObject) == &PyInstance_Type)  return 2;
+	if (Py_TYPE(pyObject) == &PyMethod_Type)    return 3;
+	if (Py_TYPE(pyObject) == &PyClass_Type)     return 6;
+	if (Py_TYPE(pyObject) == &PyCell_Type)      return 1;
+	if (Is_StaticTypeObject(pyObject))          return 7;
 	return UNKNOWN_FIXED_GC_SIZE;
 }
 
 static int
 visit_count(PyObject *op, void *arg)
 {
-	//jputs(__FUNCTION__);
+//	jputs(__FUNCTION__);
 	int* count = (int*) arg;
 	//assert(op != NULL);
 	(*count) = (*count)+1;
@@ -1634,23 +1631,28 @@ typedef struct {
 	jint pos;
 } exploreJNI;
 
-void JyNI_GC_Explore() //{}
-//void JyNI_GC_Explore0()
+void JyNI_GC_Explore()
 {
-//	jputs("explore...");
+//	jputs(__FUNCTION__);
 //	jputs("stack-size:");
 //	jputsLong(exStackSize());
+	env();
 	while (!isExStackEmpty()) {
-
 		PyObject* toExplore = popExStack();
-//		jputs("explore next");
-//		jputs(Py_TYPE(toExplore)->tp_name);
 		if (!Is_Static_PyObject(toExplore)) {
 //			jputs("JyNI-Warning: JyNI_GC_Explore found non-heap object.");
 //			jputs(Py_TYPE(toExplore)->tp_name);
 //		} else {
 			if (IS_UNEXPLORED(toExplore)) {
+//				jputs("Explore object:");
+//				jputs(Py_TYPE(toExplore)->tp_name);
+//				jputsPy(toExplore);
 				JyNI_GC_ExploreObject(toExplore);
+//				if ((*env)->ExceptionCheck(env)) {
+//					jputs("exception occurred during exploration:");
+//					(*env)->ExceptionDescribe(env);
+//					(*env)->ExceptionClear(env);
+//				}
 			}
 		}
 	}
@@ -1680,11 +1682,48 @@ static jboolean hasJyGCHead(JNIEnv* env, PyObject* op, JyObject* jy)
 		return JyObject_HasJyGCHead(op, jy);
 }
 
-static jobject obtainJyGCHead(JNIEnv* env, PyObject* op, JyObject* jy)
+/*
+ * This method is intended for objects that already have a JyNI-GCHead,
+ * but were not initialized properly when the head was created.
+ * A result of false means that either the object is still not initialized
+ * or doesn't have a head yet.
+ */
+jboolean JyNI_GC_EnsureHeadObject(JNIEnv* env, PyObject* op, JyObject* jy)
 {
-	if (Is_Static_PyObject(op))
+	if (!(jy->flags & JY_INITIALIZED_FLAG_MASK))
+		return JNI_FALSE;
+
+	if (JyObject_HasJyGCHead(op, jy))
 	{
-		//jputs("JyNI-Warning: obtainJyGCHead was called with non-heap object.");
+		jobject result = (*env)->NewLocalRef(env, JyObject_GetJyGCHead(op, jy));
+
+		if (!result || (*env)->IsSameObject(env, result, NULL))
+			return JNI_FALSE;
+
+		jobject jjy = (*env)->NewLocalRef(env, jy->jy);
+		if (!(*env)->IsSameObject(env, jjy, NULL)) {
+			(*env)->CallVoidMethod(env, result, pyObjectGCHead_setPyObject, jjy);
+		}
+		else return JNI_FALSE;
+		(*env)->DeleteLocalRef(env, jjy);
+		return JNI_TRUE;
+	} else
+		return JNI_FALSE;
+}
+
+jobject JyNI_GC_ObtainJyGCHead(JNIEnv* env, PyObject* op, JyObject* jy)
+{
+//	jputs(__FUNCTION__);
+//	jputs(op->ob_type->tp_name);
+	if (Is_Static_PyObject(op) && !Is_DynPtr(jy))
+	{
+		if (Is_DynPtr(jy)) {
+			printf("!!! WARNING: Using non-static object as static: %s %i (%s %lld)\n", __FUNCTION__, __LINE__, Py_TYPE(op)->tp_name, op);
+			if (Py_TYPE(op) == &PyType_Type) {
+				puts(((PyTypeObject*) op)->tp_name);
+			}
+		}
+		//jputs("JyNI-Warning: JyNI_GC_ObtainJyGCHead was called with non-heap object.");
 		jobject result = (*env)->CallStaticObjectMethod(env, JyNIClass,
 				JyNI_getNativeStaticJyGCHead, (jlong) op);
 		if (!result || (*env)->IsSameObject(env, result, NULL)) {
@@ -1695,11 +1734,28 @@ static jobject obtainJyGCHead(JNIEnv* env, PyObject* op, JyObject* jy)
 		}
 		return result;
 	}
+	if (!Is_DynPtr(jy)) {
+		printf("!!! Segfault-WARNING: %s %i (%lld)\n", __FUNCTION__, __LINE__, op);
+	}
 	if (jy->flags & JY_CPEER_FLAG_MASK)
 	{
-//		if (!(jy->flags & JY_INITIALIZED_FLAG_MASK))
+//		if (!(jy->flags & JY_INITIALIZED_FLAG_MASK)) {
 //			jputs("JyNI-Warning: uninitialized CPeer at explore!");
-		return JyNI_JythonPyObject_FromPyObject(op);
+//			jputsLong(op);
+//			jputs(Py_TYPE(op)->tp_name);
+//		}
+		jobject er = JyNI_JythonPyObject_FromPyObject(op);
+		//Todo: This warning is not completely silent when commented-in.
+		//Investigate!
+//		if (!(*env)->IsInstanceOf(env, er, jyGCHeadClass))
+//			jputs("Obtained a head that is not a JyGCHead!");
+
+//		if (PyType_Check(op) && !(*env)->IsInstanceOf(env, er, pyTypeClass)) {
+//			jputs("Obtained a head that is not a PyType!");
+//			if ((*env)->IsInstanceOf(env, er, pyCPeerGCClass))
+//				jputs("Created pyCPeerGC instead");
+//		}
+		return er;
 	} else
 	{
 		jboolean hasHeadAttr = JyObject_HasJyGCHead(op, jy);
@@ -1721,7 +1777,7 @@ static jobject obtainJyGCHead(JNIEnv* env, PyObject* op, JyObject* jy)
 			if (Py_TYPE(op) == &PyList_Type)
 			{
 				/* Set up JyGCHead before we call track: */
-				result = (*env)->NewObject(env, JyListClass, JyListFromBackendHandleConstructor, (jlong) op);
+				result = (*env)->NewObject(env, JyListClass, JyList_fromBackendHandleConstructor, (jlong) op);
 //				if ((*env)->ExceptionCheck(env)) {
 //					jputs("exception occurred creating JyList:");
 //					(*env)->ExceptionDescribe(env);
@@ -1731,8 +1787,10 @@ static jobject obtainJyGCHead(JNIEnv* env, PyObject* op, JyObject* jy)
 				//Use DefaultTraversableGCHead for now unless mirror mode.
 				result = (*env)->CallStaticObjectMethod(env, JyNIClass, JyNI_makeGCHead,
 						(jlong) op, JyObject_IS_MIRROR(op, jy), PyObject_IS_GC(op));
-				//jputs("Created JyGCHead for ");
-				//jputs(Py_TYPE(op)->tp_name);
+//				jputs("Created JyGCHead for ");
+//				jputs(Py_TYPE(op)->tp_name);
+//				jputsLong(op);
+//				JyNI_jprintHash(result);
 //				if (PyString_Check(op)) {
 //					jputs(PyString_AS_STRING(op));
 //				}
@@ -1744,11 +1802,13 @@ static jobject obtainJyGCHead(JNIEnv* env, PyObject* op, JyObject* jy)
 					//jputsLong((*env)->GetObjectRefType(env, jy->jy));
 					if (!(*env)->IsSameObject(env, jjy, NULL)) {
 						//jputs("RefType1");
-						(*env)->CallVoidMethod(env, result, pyObjectGCHeadSetObject, jjy);
+//						jputsLong(__LINE__);
+						(*env)->CallVoidMethod(env, result, pyObjectGCHead_setPyObject, jjy);
 					}
 					(*env)->DeleteLocalRef(env, jjy);
-				}
+				} //else jputs("obj for head not yet initialized!");
 			}
+			//jputsLong(__LINE__);
 			//Here we add another ref for the JyGCHead to let it keep the native object alive.
 			Py_INCREF(op);
 //			if ((jy->flags & JY_INITIALIZED_FLAG_MASK)) {
@@ -1773,6 +1833,7 @@ static jobject obtainJyGCHead(JNIEnv* env, PyObject* op, JyObject* jy)
 static int
 visit_exploreArrayLink(PyObject *op, void *arg)
 {
+//	jputs(__FUNCTION__);
 	/* JyNI-note:
 	 * It is hard to decide whether to explore non-heap-objects here or not.
 	 * On one hand they should be kept alive anyway. However there might be
@@ -1783,11 +1844,11 @@ visit_exploreArrayLink(PyObject *op, void *arg)
 	 * on it again or one accessed it any other way (because FROM_JY must look
 	 * at a flag; FROM_JY_WITH_GC or FROM_JY_NO_GC would not be affected, but
 	 * are not feasible here).
-	 * However, for non-heap objects obtainJyGCHead ignores the JyObject-param,
+	 * However, for non-heap objects JyNI_GC_ObtainJyGCHead ignores the JyObject-param,
 	 * so an invalid pointer causes no harm.
 	 */
 	//if (!Is_Static_PyObject(op)) {
-	jobject head = obtainJyGCHead(((exploreJNI*) arg)->env, op, AS_JY(op));
+	jobject head = JyNI_GC_ObtainJyGCHead(((exploreJNI*) arg)->env, op, _AS_JY(op));
 	(*((exploreJNI*) arg)->env)->SetObjectArrayElement(((exploreJNI*) arg)->env,
 			((exploreJNI*) arg)->dest, ((exploreJNI*) arg)->pos++, head);
 	(*((exploreJNI*) arg)->env)->DeleteLocalRef(((exploreJNI*) arg)->env, head);
@@ -1802,87 +1863,106 @@ visit_exploreListLink(PyObject *op, void *arg)
 	 * See note in visit_exploreArrayLink.
 	 */
 	//if (!Is_Static_PyObject(op)) {
-	jobject head = obtainJyGCHead(((exploreJNI*) arg)->env, op, AS_JY(op));
+	jobject head = JyNI_GC_ObtainJyGCHead(((exploreJNI*) arg)->env, op, _AS_JY(op));
 	(*((exploreJNI*) arg)->env)->CallBooleanMethod(((exploreJNI*) arg)->env,
-			((exploreJNI*) arg)->dest, listAdd, head);
+			((exploreJNI*) arg)->dest, list_add, head);
 	(*((exploreJNI*) arg)->env)->DeleteLocalRef(((exploreJNI*) arg)->env, head);
 	//}
 	return 0;
 }
 
+/*
+ * Excpects a traversable PyObject as obj.
+ */
+static jsize countReferences(PyObject* obj, traverseproc trav)
+{
+	if (!trav)
+	{
+//		jputsLong(__LINE__);
+		if (PyType_CheckExact(obj)) {// && !Py_TYPE((PyObject*) op)->tp_traverse)
+//			jputsLong(__LINE__);
+			trav = statictype_traverse; //For now we use this traverse-method also for heap-types.
+		} else trav = Py_TYPE((PyObject*) obj)->tp_traverse;
+	}
+	jsize result = 0;
+	trav((PyObject*) obj, (visitproc) visit_count, &result);
+	return result;
+}
+
 static int
 visit_updateLinks(PyObject *op, void *arg)
 {
-	jobject head = obtainJyGCHead(((exploreJNI*) arg)->env, op, AS_JY(op));
-	(*((exploreJNI*) arg)->env)->CallIntMethod(((exploreJNI*) arg)->env,
-			((exploreJNI*) arg)->dest, traversableGCHeadSetLink,
-			((exploreJNI*) arg)->pos++, head);
+//	debugContext("   ->", op, "|");
+	jobject head = JyNI_GC_ObtainJyGCHead(((exploreJNI*) arg)->env, op, AS_JY(op));
+	if ( (*((exploreJNI*) arg)->env)->CallIntMethod(((exploreJNI*) arg)->env,
+			((exploreJNI*) arg)->dest, traversableGCHead_setLink,
+			((exploreJNI*) arg)->pos++, head)
+			== -1)
+	{
+		PyObject* destObj = JyNI_PyObject_FromJythonPyObject(((exploreJNI*) arg)->dest);
+		jsize size = countReferences(destObj, NULL);
+//		jputs("Native ensure size:");
+//		jputsLong(size);
+		(*((exploreJNI*) arg)->env)->CallVoidMethod(((exploreJNI*) arg)->env,
+				((exploreJNI*) arg)->dest, traversableGCHead_ensureSize, size);
+		(*((exploreJNI*) arg)->env)->CallIntMethod(((exploreJNI*) arg)->env,
+					((exploreJNI*) arg)->dest, traversableGCHead_setLink,
+					((exploreJNI*) arg)->pos-1, head);
+	}
 	(*((exploreJNI*) arg)->env)->DeleteLocalRef(((exploreJNI*) arg)->env, head);
 	return 0;
 }
 
 static jobject exploreJyGCHeadLinks(JNIEnv* env, PyObject* op, JyObject* jy) {
-	//jputs(__FUNCTION__);
-	//jputs(Py_TYPE(op)->tp_name);
+	//debugPy(op);
+//	jboolean jdbg = (strcmp(Py_TYPE(op)->tp_name, "xxx") == 0);
+//	if (jdbg) jputs(__FUNCTION__);
 	traverseproc trav;
-	if (PyType_CheckExact(op))// && !Py_TYPE((PyObject*) op)->tp_traverse)
+	if (PyType_Check(op)) {// && !Py_TYPE((PyObject*) op)->tp_traverse)
+		//todo: use heap-types own traverse method for heap-types again.
 		trav = statictype_traverse; //For now we use this traverse-method also for heap-types.
-	else trav = Py_TYPE((PyObject*) op)->tp_traverse;
-
-	if (!(jy->flags & JY_GC_VAR_SIZE)) {
-		//jputsLong(__LINE__);
+	} else trav = Py_TYPE((PyObject*) op)->tp_traverse;
+	if (!PyType_Check(op) && !Is_DynPtr(jy)) {
+		printf("!!! potential Segfault-WARNING: %s %i (%lld)\n", __FUNCTION__, __LINE__, op);
+		puts(Py_TYPE(op)->tp_name);
+		if (Py_TYPE(op) == &PyType_Type) puts(((PyTypeObject*) op)->tp_name);
+	}
+	if (PyType_Check(op) || !(jy->flags & JY_GC_VAR_SIZE)) {
 		jsize fixedSize = JyObject_FixedGCSize(op);
 		if (fixedSize == UNKNOWN_FIXED_GC_SIZE &&
 			Py_TYPE(op)->tp_itemsize < sizeof(PyObject*))
 		{
+//			jputsLong(Py_TYPE(op)->tp_itemsize);
 			//Is most likely fixed-size anyway, but we must
 			//obtain the size by traverse-counting.
-			fixedSize = 0;
+			fixedSize = countReferences(op, trav);
 
-			trav((PyObject*) op, (visitproc)visit_count, &fixedSize);
+//			trav((PyObject*) op, (visitproc)visit_count, &fixedSize);
+//			jputs("Estimated fixed size:");
+//			jputsLong(fixedSize);
 		}
-		//jputsLong(__LINE__);
+//		jputsLong(fixedSize);
 		if (fixedSize != UNKNOWN_FIXED_GC_SIZE)
 		{
-			//jputsLong(__LINE__);
 			if (fixedSize == 1) {
-				//jputsLong(__LINE__);
-				PyObject* singleLink;
+				PyObject* singleLink = NULL;
 				trav(op, (visitproc)visit_exploreSingleLink, &singleLink);
-				//jputsLong(__LINE__);
-				//jputs(Py_TYPE(op)->tp_name);
-				//jputs(Py_TYPE(singleLink)->tp_name);
-				if (!singleLink) {
-					jputs("singleLink is NULL");
-					jputsLong(op);//PyTuple_GET_ITEM(op, 0));
-				}
-//				if (Is_Static_PyObject(singleLink))
-//					jputs("JyNI-Warning: Obtained non-heap single link.");
-//				else jputs("non-static");
-//				jputsLong(__LINE__);
-				if (!Is_Static_PyObject(singleLink)) {
-					JyObject* jy = AS_JY(singleLink);
-					jobject result0 = obtainJyGCHead(env, singleLink, jy);
-					//jputsLong(__LINE__);
+				if (singleLink) {// && !Is_Static_PyObject(singleLink)) {
+					JyObject* jy = _AS_JY(singleLink);
+					jobject result0 = JyNI_GC_ObtainJyGCHead(env, singleLink, jy);
 					return result0;
-					//return obtainJyGCHead(env, singleLink, AS_JY(singleLink));
-				} else
+					//return JyNI_GC_ObtainJyGCHead(env, singleLink, AS_JY(singleLink));
+				} else {
 					return NULL;
+				}
 			} else {
-				//jputsLong(__LINE__);
-				//jputs("obt...");
 				jobject result = (*env)->NewObjectArray(env, fixedSize, jyGCHeadClass, NULL);
-				//jputs("obt result...");
 				exploreJNI expl = {env, result, 0};
-				//jputs("obt expl...");
 				trav(op, visit_exploreArrayLink, &expl);
-				//jputs("obt done");
-				//jputsLong(__LINE__);
 				return result;
 			}
 		}
 	}
-	//jputs("Create var-size head...");
 	//Create var-size GC-head...
 	//obtain initial size...
 	jsize initSize;
@@ -1890,13 +1970,11 @@ static jobject exploreJyGCHeadLinks(JNIEnv* env, PyObject* op, JyObject* jy) {
 		initSize = Py_SIZE(op);
 	else {
 		initSize = 0;
-		trav((PyObject*) op,
-				(visitproc)visit_count, &initSize);
+		trav((PyObject*) op, (visitproc) visit_count, &initSize);
 	}
-	jobject result = (*env)->NewObject(env, arrayListClass, arrayListConstructor, initSize);
+	jobject result = (*env)->NewObject(env, arrayListClass, arrayList_Constructor, initSize);
 	exploreJNI expl = {env, result, 0};
 	trav(op, visit_exploreListLink, &expl);
-	//jputsLong(__LINE__);
 	return result;
 }
 
@@ -1905,8 +1983,8 @@ int updateJyGCHeadLink(PyObject* op, JyObject* jy, jsize index,
 {
 	if (!newItem) {
 		env(GC_OBJECT_JNIFAIL);
-		jobject gcHead = obtainJyGCHead(env, op, jy);
-		return (*env)->CallIntMethod(env, gcHead, traversableGCHeadClearLink, index);
+		jobject gcHead = JyNI_GC_ObtainJyGCHead(env, op, jy);
+		return (*env)->CallIntMethod(env, gcHead, traversableGCHead_clearLink, index);
 	}
 	if (IS_UNEXPLORED(op))
 	{
@@ -1918,9 +1996,16 @@ int updateJyGCHeadLink(PyObject* op, JyObject* jy, jsize index,
 		return GC_OBJECT_UNEXPLORED;
 	} else {
 		env(GC_OBJECT_JNIFAIL);
-		jobject gcHead = obtainJyGCHead(env, op, jy);
-		jobject linkHead = obtainJyGCHead(env, newItem, newItemJy);
-		return (*env)->CallIntMethod(env, gcHead, traversableGCHeadSetLink, index, linkHead);
+		jobject gcHead = JyNI_GC_ObtainJyGCHead(env, op, jy);
+		jobject linkHead = JyNI_GC_ObtainJyGCHead(env, newItem, newItemJy);
+		int result = (*env)->CallIntMethod(env, gcHead, traversableGCHead_setLink, index, linkHead);
+		if (result == -1)
+		{
+			jsize size = countReferences(op, NULL);
+			(*env)->CallVoidMethod(env, gcHead, traversableGCHead_ensureSize, size);
+			result = (*env)->CallIntMethod(env, gcHead, traversableGCHead_insertLink, index, linkHead);
+		}
+		return result;
 	}
 }
 
@@ -1960,7 +2045,7 @@ int updateClearJyGCHeadLinks(PyObject* op, JyObject* jy, jsize startIndex)
 			return GC_OBJECT_INVALIDHEAD;
 		}
 		int result = (*env)->CallIntMethod(env, gcHead,
-				traversableGCHeadClearLinksFromIndex, startIndex);
+				traversableGCHead_clearLinksFromIndex, startIndex);
 		(*env)->DeleteLocalRef(env, gcHead);
 		return result;
 	}
@@ -1976,24 +2061,34 @@ int updateInsertJyGCHeadLink(PyObject* op, JyObject* jy, jsize index,
 		 */
 		//jputs("JyNI-Warning: updateJyGCHeadLink called on unexplored object!");
 		//JyNI_GC_ExploreObject(op);
-		return GC_OBJECT_UNEXPLORED;;
-	} else {
+		return GC_OBJECT_UNEXPLORED;
+	} else
+	{
 		env(GC_OBJECT_JNIFAIL);
-		jobject gcHead = obtainJyGCHead(env, op, jy);
-		jobject linkHead = obtainJyGCHead(env, newItem, newItemJy);
-		return (*env)->CallIntMethod(env, gcHead, traversableGCHeadInsertLink, index, linkHead);
+		jobject gcHead = JyNI_GC_ObtainJyGCHead(env, op, jy);
+		jobject linkHead = JyNI_GC_ObtainJyGCHead(env, newItem, newItemJy);
+		int result = (*env)->CallIntMethod(env, gcHead, traversableGCHead_insertLink, index, linkHead);
+		if (result == -1)
+		{
+			jsize size = countReferences(op, NULL);
+			(*env)->CallVoidMethod(env, gcHead, traversableGCHead_ensureSize, size);
+			result = (*env)->CallIntMethod(env, gcHead, traversableGCHead_insertLink, index, linkHead);
+		}
+		return result;
 	}
 }
 
 int updateJyGCHeadLinks(PyObject* op, JyObject* jy) {
-	//jputs(__FUNCTION__);
-	//jputs(Py_TYPE(op)->tp_name);
+//	jputs(__FUNCTION__);
+//	jputsLong(op);
+//	jputs(Py_TYPE(op)->tp_name);
 	if (IS_UNEXPLORED(op))
 	{
 		/* Attempts to update are not necessarily good places to perform
 		 * object exploration. For now we refrain from it.
 		 */
-		//jputs("JyNI-Warning: updateJyGCHeadLinks called on unexplored object!");
+//		jputs("JyNI-Warning: updateJyGCHeadLinks called on unexplored object!");
+//		jputsLong(op);
 		//JyNI_GC_ExploreObject(op);
 		return GC_OBJECT_UNEXPLORED;
 	} else {
@@ -2003,18 +2098,36 @@ int updateJyGCHeadLinks(PyObject* op, JyObject* jy) {
 			trav = statictype_traverse; //For now we use this traverse-method also for heap-types.
 		else trav = Py_TYPE((PyObject*) op)->tp_traverse;
 
-		jobject destHead = obtainJyGCHead(env, op, jy);
+		jobject destHead = JyNI_GC_ObtainJyGCHead(env, op, jy);
 		exploreJNI expl = {env, destHead, 0};
 		trav(op, visit_updateLinks, &expl);
-		(*env)->CallIntMethod(env, destHead, traversableGCHeadClearLinksFromIndex, expl.pos);
+		(*env)->CallIntMethod(env, destHead, traversableGCHead_clearLinksFromIndex, expl.pos);
 		(*env)->DeleteLocalRef(env, destHead);
 		return 0;
 	}
 }
 
-void JyNI_GC_ExploreObject(PyObject* op) //{}
-//void JyNI_GC_ExploreObject0(PyObject* op)
+void JyNI_GC_ExploreObject(PyObject* op)
 {
+//	jputs(__FUNCTION__);
+//	jputsLong(op);
+//	jputs(Py_TYPE(op)->tp_name);
+	/*
+	 * Note that not only GC-objects (in terms of PyObject_IS_GC) must be explored,
+	 * but every traversable object. Non-heap types are an example of this. They
+	 * are traversable, but don't have a gc-head. Nevertheless JyNI needs to explore
+	 * them to obtain a full reference graph.
+	 * Such objects are a special case though, because without a GC-head we cannot
+	 * set the GC_EXPLORED flag.
+	 * So for IS_UNEXPLORED we check for the GC_EXPLORED-flag only if the object
+	 * satisfies PyObject_IS_GC. Otherwise we still do a special check for
+	 * Type-objects, whether they have their ready-flag set, assuming that "readied"
+	 * types have also been explored by this method.
+	 * For other traversable, but non-gc (in terms of PyObject_IS_GC) obects we
+	 * assume unexplored state all the time, even if the object was explored. So we
+	 * redo exploration whenever we encounter such an object
+	 * (actually no cases of this are currently known).
+	 */
 //	if (Is_Static_PyObject(op)) {
 //		//jputs("JyNI-Warning: JyNI_GC_ExploreObject called with non-heap object.");
 //		//jputs(Py_TYPE(op)->tp_name);
@@ -2023,62 +2136,27 @@ void JyNI_GC_ExploreObject(PyObject* op) //{}
 	if (Is_Static_PyObject(op) || IS_UNEXPLORED(op))
 	{ //For now we force re-exploration of static PyObjects whenever it occurs.
 
-//		jputs("explore object:");
-//		jputs(Py_TYPE((PyObject*) op)->tp_name);
-	//	jputsLong(op);
-	//	if (AS_GC(op)->gc.gc_refs == GC_UNTRACKED) {
-	//		jputs("GC explore untracked object... this will cause problems...");
-	//	}
-		//jputs("count references...");
-		AS_GC(op)->gc.gc_refs = GC_EXPLORING;
-		if (Py_TYPE((PyObject*) op)->tp_traverse) {
-			int refCount = 0;
-			Py_TYPE((PyObject*) op)->tp_traverse((PyObject*) op, (visitproc)visit_count, &refCount);
-			//For now we only explore tracked objects. Only in GIL-free mode this will be different.
-			//Py_TYPE((PyObject*) op)->tp_traverse((PyObject*) op, (visitproc)visit_explore, NULL);
-	//		if (Py_TYPE(op) == &PyTuple_Type) {
-	//			jputs("explore tuple");
-	//			jputsLong(Py_SIZE(op));
-	//			//PyTuple_Size(op);
-	//			jputsLong(refCount);
-	//			jputsLong(op);
-	//			jputs("");
-	//		}
-		} //else {
-		/* This is okay to happen since mirrored objects are explored
-		 * and get a JyGCHead even if they are not subject of GC.
-		 */
-	//		jputs("tp_traverse is NULL:");
-	//		jputs(Py_TYPE((PyObject*) op)->tp_name);
-	//		jputsLong(op);
-	//	}
-		AS_GC(op)->gc.gc_refs = GC_EXPLORED;
-		JyObject* jy = AS_JY_WITH_GC(op);
-	//	if (!(jy->flags & JY_INITIALIZED_FLAG_MASK)) {
-	//		jputs("Explore uninitialized");
-	//		jputsLong(op);
-	//		jputsLong(jy);
-	//	}
-	//	if (!(jy->flags & JY_INITIALIZED_FLAG_MASK)) {
-	//		//initialize if it is a CPeer...
-	//		if ((jy->flags & JY_CPEER_FLAG_MASK)) {// || !(jy->jy)) {
-	//			JyNI_JythonPyObject_FromPyObject(op); //this should initialize it
-	//			if (!(jy->flags & JY_CPEER_FLAG_MASK)) {
-	//				jputs("JyNI-Error: initialized a non-CPeer object during explore!");
-	//				jputs(Py_TYPE((PyObject*) op)->tp_name);
-	//			}
-	//		}
-	//	}
-
+		JyObject* jy;
 		env();
-		jobject jyHead = obtainJyGCHead(env, op, jy);
-
-		//perform exploration here and add all reachable JyGCHeads as links to jyHead.
-		//If the object is JyNI-GC-Var, use a list or something as head-links.
+		if (PyObject_IS_GC(op))
+			AS_GC(op)->gc.gc_refs = GC_EXPLORED; // Todo: Use GC_EXPLORED vs GC_EXPLORING properly
+		else if (!Is_Static_PyObject(op))
+		{
+			/* Pure CStub-case (as pure CStubs are the only tracked non-gc objects,
+			 * except some static ones.) Just create GCHead and get out of here: */
+			jy = _AS_JY_NO_GC(op);
+			JyNI_GC_ObtainJyGCHead(env, op, jy);
+			return;
+		}
+		jy = _AS_JY_WITH_GC(op);
+		/* Note that JyNI_GC_ObtainJyGCHead checks again for staticness and doesn't
+		 * use jy in static case (which would otherwise result in a memory flaw).*/
+		jobject jyHead = JyNI_GC_ObtainJyGCHead(env, op, jy);
+		/* perform exploration here and add all reachable JyGCHeads as links to jyHead.
+		 * If the object is JyNI-GC-Var, use a list or something as head-links.*/
 		jobject linkHeads = exploreJyGCHeadLinks(env, op, jy);
-		(*env)->CallVoidMethod(env, jyHead, traversableGCHeadSetLinks, linkHeads);
+		(*env)->CallVoidMethod(env, jyHead, traversableGCHead_setLinks, linkHeads);
 	}
-
 	/*
 	 * The code above does the following:
 	 *
@@ -2098,30 +2176,63 @@ void JyNI_GC_ExploreObject(PyObject* op) //{}
 	 * What about pure CStubs? These don't need native tracking. Check whether it is feasible
 	 * to treat them as ordinary non-gc objects on native side. Done: Converted some objects
 	 * like dict and module to non-gc.
+	 * Update:
+	 * Also pure CStubs need a GCHead (i.e. CStubGCHead or CStubSimpleGCHead) to secure them
+	 * against invidiously timed gc runs. To avoid this effort for short-lived objects we
+	 * add these heads in exploration phase; until exploration phase is reached a JNI local
+	 * ref will keep the Java part alive.
 	 */
+//	debugContext("explore done", op, "");
 }
 
 static int
 visit_refCheckDec(PyObject *op, void *arg)
 {
-	int pos = (int) JyNI_GetJyAttribute(AS_JY(op), JyAttributeJyGCRefTmp);
-	if (pos > 0)
-		--(((jint*) arg)[pos-1]);
+	if (!Is_Static_PyObject(op))
+	{
+//		debugContext("    ", op, "");
+		int pos = (int) JyNI_GetJyAttribute(AS_JY(op), JyAttributeJyGCRefTmp);
+		if (pos > 0)
+			--(((jint*) arg)[pos-1]);
+	}
 	return 0;
 }
 
 static int
 visit_refCheckInc(PyObject *op, void *arg)
 {
-	int pos = (int) JyNI_GetJyAttribute(AS_JY(op), JyAttributeJyGCRefTmp);
-	if (pos > 0)
-		++(((jint*) arg)[pos-1]);
+	if (!Is_Static_PyObject(op))
+	{
+		int pos = (int) JyNI_GetJyAttribute(AS_JY(op), JyAttributeJyGCRefTmp);
+		if (pos > 0)
+			++(((jint*) arg)[pos-1]);
+	}
 	return 0;
 }
 
 /*
+ * This method checks the reference graph spanned  by the objects
+ * in the PyObject*-array refPool for inner consistency.
+ * This means that all reference-counts must be explainable within
+ * this graph.
+ *
+ * A zero return-value indicates that there must be external
+ * objects holding references to refPool.
+ *
+ * A non-zero return value indicates that refPool is self-contained
+ * in terms of reference-counting. For GC this usually means it can
+ * be safely deleted, regardless of various internal reference counts,
+ * as these must be a system of cycles.
+ *
+ * 'result' is a pointer to an int-array that will be filled with boolean
+ * values indicating object-wise whether the component's reference count
+ * is explainable within refPool (0 means explainable).
+ * This array needs not to be initialized;
+ * it is guaranteed that every component of it will be explicitly set.
+ *
+ *
  * Note that one must be holding the GIL to call this method.
- * Also, result won't contain actual refcount, but contains
+ * Also, 'result' won't contain actual refcount, but contains
  * zero if no refs exist and >0 if at least one ref exists.
  * The algorithm only looks for has/has not ref, but then does
  * *not* investigate the exact count. This is sufficient to
@@ -2146,16 +2257,18 @@ static inline jboolean checkReferenceGraph(PyObject** refPool, jsize size, jint*
 			--result[i];
 //		jputsLong(refPool[i]);
 //		jputsLong(result[i]);
+		//We store 'i+i' so that '0' can stand for uninitialized.
 		JyNI_AddOrSetJyAttribute(jy, JyAttributeJyGCRefTmp, (void*) (i+1));
 //		}
 	}
-	//Now we decref the tmp-refcount copy of all referees.
+	//Now we decref the tmp-refcount copy (i.e. result) of all referees.
 	for (i = 0; i < size; ++i)
 	{
 		if (PyObject_IS_GC(refPool[i]))
 		{
 //			jputs("DecTraverse:");
 //			jputsLong(refPool[i]);
+//			debugContext("", refPool[i], "->");
 			Py_TYPE(refPool[i])->tp_traverse(refPool[i], (visitproc)visit_refCheckDec, result);
 		}
 	}
@@ -2181,11 +2294,14 @@ static inline jboolean checkReferenceGraph(PyObject** refPool, jsize size, jint*
 //			jputsLong(refPool[i]);
 //			jputsLong(result[i]);
 			break;
-		} else if (result[i] < 1)
+		} else if (result[i] < 1) {
 			jputs("JyNI-Error: negative ref-count encountered!");
+			jputs(Py_TYPE(refPool[i])->tp_name);
+		}
 	}
 	if (graphInvalid)
 	{
+		// We perform a breadth-first search to fully provide result-array.
 		//jputs("JyNI-Note: Invalid reference graph encountered!");
 		jint restoreStack[size];
 		jint restoreRefs[size];
@@ -2205,6 +2321,7 @@ static inline jboolean checkReferenceGraph(PyObject** refPool, jsize size, jint*
 //		jputsLong(Py_TYPE(refPool[restoreStack[stackTop-1]])->tp_traverse);
 		while (stackTop)
 		{
+//			jputsLong(stackTop);
 			//jputsLong(__LINE__);
 			for (i = 0; i < stackTop; ++i)
 			{
@@ -2215,7 +2332,11 @@ static inline jboolean checkReferenceGraph(PyObject** refPool, jsize size, jint*
 			stackTop = 0;
 			for (i = 0; i < size; ++i)
 			{
-				if (result[i] == 1 && restoreRefs > 0)
+				/* In our BFS we check for non-initial state
+				 * on result side and for non-zero on ref-side
+				 * to identify not yet visited nodes:
+				 */
+				if (result[i] == 1 && restoreRefs[i] > 0)
 				{
 					result[i] += restoreRefs[i];
 					if (PyObject_IS_GC(refPool[i]))
@@ -2253,7 +2374,15 @@ jboolean JyGC_clearNativeReferences(JNIEnv *env, jclass class, jlongArray refere
 	PyObject* refPool[size];
 	jint graphResult[size];
 	jlong* arr = (*env)->GetLongArrayElements(env, references, NULL);
-	memcpy(refPool, arr, size*sizeof(PyObject*));
+#if __SIZEOF_POINTER__ == 8
+	/* Regardless of the platform jlong is always 8 bytes. So this branch is processed
+	 * whenever jlong and PyObject* are of same size, i.e. memcpy can be used:
+	 */
+	Py_MEMCPY(refPool, arr, size*sizeof(PyObject*));
+#else
+	for (i = 0; i < size; ++i) refPool[i] = (PyObject*) arr[i];
+#endif
+
 	(*env)->ReleaseLongArrayElements(env, references, arr, JNI_ABORT);
 	jboolean graphInvalid = checkReferenceGraph(refPool, size, graphResult);
 	if (graphInvalid)
@@ -2282,10 +2411,35 @@ jboolean JyGC_clearNativeReferences(JNIEnv *env, jclass class, jlongArray refere
 		if (resurrectArr) (*env)->ReleaseLongArrayElements(env, resurrectArr, resurrectArr2, JNI_COMMIT);
 		if (confirmArr) (*env)->ReleaseLongArrayElements(env, confirmArr, confirmArr2, JNI_COMMIT);
 		(*env)->CallStaticVoidMethod(env, JyNIClass, JyNI_gcDeletionReport, confirmArr, resurrectArr);
-		if (resurrectArr)
+		if (resurrectArr) {
+			/* We wait for finalizers to be done. Problem here is that some
+			 * finalizers might call into native code (e.g. by looking up some
+			 * attribute of a CPeer). In that case they can deadlock on the GIL
+			 * with this waiting point here.
+			 * Py_BEGIN_ALLOW_THREADS/Py_END_ALLOW_THREADS can solve this, but
+			 * might also allow other threads to interfere with gc-process
+			 * causing unforeseeable trouble.
+			 *
+			 * I currently see two options:
+			 * 1) Go with Py_BEGIN_ALLOW_THREADS/Py_END_ALLOW_THREADS and keep an
+			 *    eye on it via testing
+			 * 2) Strictly require finalizers not to call into native code.
+			 *
+			 * Since I see no way how to enforce option 2) or even just detect
+			 * violations properly, it could be a constant source of deadlocks.
+			 *
+			 * So I'll apply 1) and hope it won't hurt too much (still, finalizers
+			 * are at least _recommended_ not to call into native code).
+			 *
+			 * Edit: This should be solvable by replacing ENTER_JYNI with RE_ENTER_JYNI etc.
+			 *       Then it should be okay to remove Py_BEGIN_ALLOW_THREADS-block here.
+			 */
+			Py_BEGIN_ALLOW_THREADS
 			(*env)->CallStaticVoidMethod(env, JyNIClass, JyNI_waitForCStubs);
-	}
-	else {
+			Py_END_ALLOW_THREADS
+		}
+	} else
+	{
 		//jputs("Valid graph");
 //		jputsLong(size);
 		//Todo: Provide a quicker gcDeletionReport-method for this "trivial" case.
@@ -2406,29 +2560,45 @@ static jboolean longArrayContains(jlong* array, jsize size, jlong value)
  */
 jboolean JyGC_validateGCHead(JNIEnv *env, jclass class, jlong handle, jlongArray oldLinks)
 {
-	//jputs(__FUNCTION__);
+
+	PyTypeObject* ptp = Py_TYPE((PyObject*) handle);
 	assert(handle);
+//	jboolean dbg = strcmp(ptp->tp_name, "Class") == 0;
+//	if (dbg) {
+//		jputs(__FUNCTION__);
+//		jputsLong(ptp);
+//		jputsLong(handle);
+//		jputs(ptp->tp_name);
+//		jputsLong(PyType_HasFeature(ptp, Py_TPFLAGS_HEAPTYPE));
+//		JyObject* jy = AS_JY((PyObject*) handle);
+//		if (JyObject_IS_INITIALIZED(jy)) jputs("initialized!");
+//		jputsLong(jy->jy);
+//		JyNI_printJInfo(jy->jy);
+//		JyNI_jprintJ(jy->jy);
+//	}
 
 	traverseproc trav;
 	if (PyType_CheckExact((PyObject*) handle))// && !Py_TYPE((PyObject*) op)->tp_traverse)
 		trav = statictype_traverse; //For now we use this traverse-method also for heap-types.
 	else trav = Py_TYPE((PyObject*) handle)->tp_traverse;
-
 	countChanges changeCount = {NULL, 0, 0, 0};
 	if (oldLinks) {
 		changeCount.size = (*env)->GetArrayLength(env, oldLinks);
 		if (changeCount.size)
 			changeCount.oldLinks = (*env)->GetLongArrayElements(env, oldLinks, NULL);
 	}
+//	if (dbg)
+//	{
+//		jputsLong(__LINE__);
+//		jputsLong(ptp->tp_traverse);
+//	}
 	trav((PyObject*) handle, visit_countChanges, &changeCount);
 	if (!changeCount.changes) {
 		//nothing to do...
 		if (changeCount.size)
 			(*env)->ReleaseLongArrayElements(env, oldLinks, changeCount.oldLinks, JNI_ABORT);
-		//jputs("nothing to do");
 		return JNI_FALSE;
 	}
-	//jputsLong(__LINE__);
 	//jputsLong(changeCount.changes);
 	jlong* potentialChanges[changeCount.changes];
 	findChanges changes = {changeCount.oldLinks, potentialChanges, changeCount.size, 0, 0};
@@ -2451,7 +2621,7 @@ jboolean JyGC_validateGCHead(JNIEnv *env, jclass class, jlong handle, jlongArray
 	/* We do this update as soon as possible, but not while the JVM is exposing an array
 	   (i.e. might not be at full power): */
 	updateJyGCHeadLinks((PyObject*) handle, AS_JY((PyObject*) handle));
-	//jputs("validateGCHead done");
+//	if (dbg) jputs("validateGCHead done");
 	return result;
 }
 
@@ -2556,6 +2726,13 @@ jlongArray JyGC_nativeTraverse(JNIEnv *env, jclass class, jlong handle)
 }
 
 void
+JyNI_GC_Track_CStub(PyObject* op)
+{
+//	jputs(__FUNCTION__);
+	pushExStack(op);
+}
+
+void
 PyObject_GC_Track(void *op)
 {
 //	jputs(__FUNCTION__);
@@ -2571,7 +2748,7 @@ PyObject_GC_Track(void *op)
 	 */
 	//JyNI_GC_Explore();
 	if (Is_Static_PyObject(op)) {
-		//jputs("JyNI-Warning: PyObject_GC_Track called with non-heap object.");
+//		jputs("JyNI-Warning: PyObject_GC_Track called with non-heap object.");
 		return;
 	}
 	JyNIDebugOp(JY_NATIVE_GC_TRACK, (PyObject*) op, -1);
@@ -2587,6 +2764,7 @@ PyObject_GC_Track(void *op)
 	//if ((AS_JY_WITH_GC(op)->flags & GC_NO_INITIAL_EXPLORE) == 0)
 	//	JyNI_GC_Explore((PyObject*) op);
 	pushExStack((PyObject*) op);
+//	jputs("Track done");
 //	jputs("new Stack-size:");
 //	jputsLong(exStackSize());
 }
@@ -2633,6 +2811,12 @@ PyObject_GC_UnTrack(void *op)
 		}
 		JyNIDebugOp(JY_NATIVE_GC_UNTRACK, (PyObject*) op, -1);
 		_PyObject_GC_UNTRACK(op);
+//		PyGC_Head *g = _Py_AS_GC(op);
+//		assert(g->gc.gc_refs != _PyGC_REFS_UNTRACKED);
+//		g->gc.gc_refs = _PyGC_REFS_UNTRACKED;
+//		g->gc.gc_prev->gc.gc_next = g->gc.gc_next;
+//		g->gc.gc_next->gc.gc_prev = g->gc.gc_prev;
+//		g->gc.gc_next = NULL;
 	}
 }
 
@@ -2658,6 +2842,12 @@ _PyObject_GC_Malloc(size_t basicsize)
 		return PyErr_NoMemory();
 	//jy = (JyObject*) PyObject_MALLOC(sizeof(JyObject) + sizeof(PyGC_Head) + basicsize);
 	jy = (JyObject*) PyObject_RawMalloc(sizeof(JyObject) + sizeof(PyGC_Head) + basicsize);
+//	jputs(__FUNCTION__);
+//	jputsLong((jlong) jy);
+//	jputsLong(sizeof(JyObject) + sizeof(PyGC_Head) + basicsize);
+//	jputs("sizes:");
+//	jputsLong(sizeof(PyGC_Head));
+//	jputsLong(sizeof(JyObject));
 	//jy = (JyObject*) malloc(sizeof(JyObject) + sizeof(PyGC_Head) + basicsize);
 	//printf("_PyObject_GC_Malloc %u\n", sizeof(JyObject) + sizeof(PyGC_Head) + basicsize);
 	//printf("address: %u\n", (jlong) jy);
@@ -2667,6 +2857,8 @@ _PyObject_GC_Malloc(size_t basicsize)
 	jy->attr = NULL;
 	//g = (PyGC_Head *)PyObject_MALLOC(sizeof(PyGC_Head) + basicsize);
 	g = GC_FROM_JY(jy);
+//	jputs("g");
+//	jputsLong((jlong) g);
 	//if (g == NULL) return PyErr_NoMemory();
 	g->gc.gc_refs = GC_UNTRACKED;
 // JyNI-todo: Implement a JyNI-compliant variant of the collection block.
@@ -2681,6 +2873,8 @@ _PyObject_GC_Malloc(size_t basicsize)
 //		collecting = 0;
 //	}
 	op = FROM_GC(g);
+//	jputs("op");
+//	jputsLong((jlong) op);
 	JyNIDebug(JY_NATIVE_ALLOC_GC, op, AS_JY_WITH_GC(op), basicsize, NULL);
 	//Shortcut not feasible because generic AS_JY not yet works as it depends
 	//on a properly configured Py_TYPE(op):
@@ -2715,7 +2909,10 @@ inline void _PyObject_GC_InitJy(PyObject *op, TypeMapEntry* tme)
 		jy->jy = (jweak) tme;
 		jy->flags = JY_GC_FLAG_MASK | tme->flags;
 	} else
+	{
+		jy->jy = NULL;
 		jy->flags = JY_GC_FLAG_MASK;
+	}
 	//jy->attr = NULL;
 	//JyNI_SetUpJyObject((JyObject*) op);
 }
@@ -2822,7 +3019,7 @@ _PyObject_GC_Resize(PyVarObject *op, Py_ssize_t nitems)
 		{
 			/* take care to correct the handle on java-side */
 			env(NULL);
-			(*env)->CallStaticVoidMethod(env, JyNIClass, JyNISetNativeHandle, jy->jy, (jlong) op, (jy->flags & JY_TRUNCATE_FLAG_MASK) != 0);
+			(*env)->CallStaticVoidMethod(env, JyNIClass, JyNI_setNativeHandle, jy->jy, (jlong) op);//, (jy->flags & JY_TRUNCATE_FLAG_MASK) != 0);
 			//todo: maybe do sync here
 		}
 		//JyNIDebug2(JY_NATIVE_REALLOC_GC, AS_JY_WITH_GC(op0), jy, basicsize, NULL);

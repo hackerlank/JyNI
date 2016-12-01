@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -35,8 +37,16 @@
 #ifndef JYTSTATE_H_
 #define JYTSTATE_H_
 
+// We abuse the frame field (not used by JyNI) to store the Jython thread state.
+// Still always use this macro to access it; we might move it to another field one day.
 #define TS_GET_JY(ts) ((jobject) (ts)->frame)
 #define TS_SET_JY(ts, jy) ((ts)->frame = (struct _frame*) (jy))
+
+//We also use the tracing-field (not used by JyNI) in place of gilstate_counter:
+#define JyNI_gilstate_counter tracing
+
+//We use the use_tracing-field (not used by JyNI) to store a JyNI-specific flag:
+#define JyNI_natively_attached use_tracing
 
 //struct _ts *next;
 //PyInterpreterState *interp;
@@ -51,9 +61,15 @@
 //PyObject *curexc_type;
 //PyObject *curexc_value;
 //PyObject *curexc_traceback;
+
+//PyObject *exc_type; (not used by JyNI)
+//PyObject *exc_value; (not used by JyNI)
+//PyObject *exc_traceback; (not used by JyNI)
+//PyObject *dict;
 #define TS_TRUNCATED_SIZE (sizeof(struct _ts*) + sizeof(PyInterpreterState*) \
 		+ sizeof(struct _frame*) + 3*sizeof(int) + 2*sizeof(Py_tracefunc) \
-		+ 5*sizeof(PyObject*))
+		+ 9*sizeof(PyObject*))
+//#define TS_TRUNCATED_SIZE sizeof(PyThreadState)
 
 inline void JyErr_InsertCurExc();
 inline void Py_SetRecursionLimitNative(int new_limit);
@@ -85,5 +101,7 @@ jlong JyTState_initNativeThreadState(JNIEnv *env, jclass class, jobject jyTState
  * Signature: (J)V
  */
 void JyTState_clearNativeThreadState(JNIEnv *env, jclass class, jlong threadState);
+
+void _delNativeThreadState(PyThreadState* threadState);
 
 #endif /* JYTSTATE_H_ */

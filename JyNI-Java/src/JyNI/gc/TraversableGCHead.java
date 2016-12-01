@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -35,6 +37,10 @@ public interface TraversableGCHead extends JyGCHead {
 	 * Note:
 	 * links must be of one of these types:
 	 * JyGCHead, JyGCHead[] or Iterable<JyGCHead>
+	 * 
+	 * We do not enforce these types by overloading with
+	 * all three variants, because this would complicate
+	 * (and slow down) native calling unnecessarily.
 	 */
 	public void setLinks(Object links);
 
@@ -89,4 +95,8 @@ public interface TraversableGCHead extends JyGCHead {
 	public int jyTraverse(JyVisitproc visit, Object arg);
 
 	public long[] toHandleArray();
+
+	public void ensureSize(int size);
+	
+	public void printLinks(java.io.PrintStream out);
 }

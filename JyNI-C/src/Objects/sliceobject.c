@@ -1,12 +1,16 @@
 /* This File is based on sliceobject.c from CPython 2.7.4 release.
  * It has been modified to suit JyNI needs.
  *
- * Copyright of the original file:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
  *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -92,13 +96,19 @@ PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
 	if (stop == NULL) stop = Py_None;
 	Py_INCREF(stop);
 	env(NULL);
-	PySliceObject *obj = (PySliceObject*) _JyObject_New(&PySlice_Type, &builtinTypes[37]);
+	PySliceObject *obj = (PySliceObject*) _JyObject_New(&PySlice_Type, &builtinTypes[TME_INDEX_Slice]);
 	JyObject* jy = AS_JY_NO_GC(obj);
-	jy->jy = (*env)->NewObject(env, pySliceClass, pySliceFromStartStopStepConstructor,
+	jy->jy = (*env)->NewObject(env, pySliceClass, pySlice_fromStartStopStepConstructor,
 			JyNI_JythonPyObject_FromPyObject(start),
 			JyNI_JythonPyObject_FromPyObject(stop),
 			JyNI_JythonPyObject_FromPyObject(step));
 	jy->flags |= JY_INITIALIZED_FLAG_MASK;
+	/*
+	 * Todo:
+	 * - Maybe call JyNI_GC_EnsureHeadObject here.
+	 * - Maybe call JyNI_GC_Track_CStub
+	 */
+
 //	PySliceObject *obj = PyObject_New(PySliceObject, &PySlice_Type);
 //
 //	if (obj == NULL)
@@ -177,7 +187,7 @@ PySlice_GetIndicesEx(PySliceObject *r, Py_ssize_t length,
 	env(-1);
 	jarray res = (*env)->CallObjectMethod(env,
 			JyNI_JythonPyObject_FromPyObject((PyObject*) r),
-			pySliceIndicesEx, (jint) length);
+			pySlice_indicesEx, (jint) length);
 	jint* arr = (*env)->GetIntArrayElements(env, res, NULL);
 	if (arr == NULL)
 	{
@@ -286,9 +296,9 @@ slice_dealloc(PySliceObject *r)
 	if (JyObject_IS_INITIALIZED(jy))
 	{
 		env();
-		Py_DECREF(JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env, jy->jy, pySliceGetStart)));
-		Py_DECREF(JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env, jy->jy, pySliceGetStop)));
-		Py_DECREF(JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env, jy->jy, pySliceGetStep)));
+		Py_DECREF(JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env, jy->jy, pySlice_getStart)));
+		Py_DECREF(JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env, jy->jy, pySlice_getStop)));
+		Py_DECREF(JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env, jy->jy, pySlice_getStep)));
 //		Py_DECREF(r->step);
 //		Py_DECREF(r->start);
 //		Py_DECREF(r->stop);
@@ -306,7 +316,7 @@ slice_repr(PySliceObject *r)
 	return JyNI_PyObject_FromJythonPyObject(
 			(*env)->CallObjectMethod(env,
 					JyNI_JythonPyObject_FromPyObject((PyObject*) r),
-					pySliceToString));
+					object_toString));
 
 //	PyObject *s, *comma;
 //
@@ -334,7 +344,7 @@ slice_get_start(PySliceObject *m, void *closure)
 {
 	env(NULL);
 	return JyNI_PyObject_FromJythonPyObject(
-			(*env)->CallObjectMethod(env, JyNI_JythonPyObject_FromPyObject((PyObject*) m), pySliceGetStart));
+			(*env)->CallObjectMethod(env, JyNI_JythonPyObject_FromPyObject((PyObject*) m), pySlice_getStart));
 }
 
 static PyObject *
@@ -342,7 +352,7 @@ slice_get_stop(PySliceObject *m, void *closure)
 {
 	env(NULL);
 	return JyNI_PyObject_FromJythonPyObject(
-			(*env)->CallObjectMethod(env, JyNI_JythonPyObject_FromPyObject((PyObject*) m), pySliceGetStop));
+			(*env)->CallObjectMethod(env, JyNI_JythonPyObject_FromPyObject((PyObject*) m), pySlice_getStop));
 }
 
 static PyObject *
@@ -350,7 +360,7 @@ slice_get_step(PySliceObject *m, void *closure)
 {
 	env(NULL);
 	return JyNI_PyObject_FromJythonPyObject(
-			(*env)->CallObjectMethod(env, JyNI_JythonPyObject_FromPyObject((PyObject*) m), pySliceGetStep));
+			(*env)->CallObjectMethod(env, JyNI_JythonPyObject_FromPyObject((PyObject*) m), pySlice_getStep));
 }
 
 static PyGetSetDef slice_getsets [] = {
@@ -393,11 +403,11 @@ slice_reduce(PySliceObject* self)
 	env(NULL);
 	return Py_BuildValue("O(OOO)", Py_TYPE(self), //self->start, self->stop, self->step);
 			JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env,
-					JyNI_JythonPyObject_FromPyObject((PyObject*) self), pySliceGetStart)),
+					JyNI_JythonPyObject_FromPyObject((PyObject*) self), pySlice_getStart)),
 			JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env,
-					JyNI_JythonPyObject_FromPyObject((PyObject*) self), pySliceGetStop)),
+					JyNI_JythonPyObject_FromPyObject((PyObject*) self), pySlice_getStop)),
 			JyNI_PyObject_FromJythonPyObject((*env)->CallObjectMethod(env,
-					JyNI_JythonPyObject_FromPyObject((PyObject*) self), pySliceGetStep)));
+					JyNI_JythonPyObject_FromPyObject((PyObject*) self), pySlice_getStep)));
 }
 
 PyDoc_STRVAR(reduce_doc, "Return state information for pickling.");
@@ -414,7 +424,7 @@ static int
 slice_compare(PySliceObject *v, PySliceObject *w)
 {
 	env(-2);
-	return (*env)->CallIntMethod(env, JyNIClass, JyNISlice_compare,
+	return (*env)->CallIntMethod(env, JyNIClass, JyNI_slice_compare,
 			JyNI_JythonPyObject_FromPyObject((PyObject*) v),
 			JyNI_JythonPyObject_FromPyObject((PyObject*) w));
 //	int result = 0;

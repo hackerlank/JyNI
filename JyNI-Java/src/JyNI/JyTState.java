@@ -1,11 +1,13 @@
 /*
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
  *
  *
  * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -38,7 +40,10 @@ public class JyTState {
 	protected static int nativeRecursionLimit;
 	
 	//No IdentityHashMap needed, since ThreadState does not overwrite hashCode().
-	protected static WeakHashMap<ThreadState, JyTState> tStateLookup = new WeakHashMap<ThreadState, JyTState>();
+	//Note that WeakHashMap has weak keys and "strong" values, so this mapping implements a
+	//keep-alive relationship with each ThreadState keeping alive the corresponding JyTState.
+	protected static WeakHashMap<ThreadState, JyTState> tStateLookup =
+			new WeakHashMap<ThreadState, JyTState>();
 	
 	protected WeakReference<ThreadState> tState;
 	protected int nativeCallDepth;
@@ -49,7 +54,7 @@ public class JyTState {
 	}
 
 	public static void setRecursionLimit(ThreadState ts, int limit) {
-		ts.systemState.setrecursionlimit(limit);
+		ts.getSystemState().setrecursionlimit(limit);
 	}
 
 	public static JyTState fromThreadState(ThreadState ts) {
@@ -58,6 +63,10 @@ public class JyTState {
 		res = new JyTState(ts);
 		tStateLookup.put(ts, res);
 		return res;
+	}
+
+	public static long prepareNativeThreadState() {
+		return prepareNativeThreadState(Py.getThreadState());
 	}
 
 	public static long prepareNativeThreadState(ThreadState ts) {
@@ -69,12 +78,12 @@ public class JyTState {
 	protected static void syncToNative(JyTState ts) {
 		ThreadState tState = ts.tState.get();
 		if (tState == null) return;
-		if (nativeRecursionLimit != tState.systemState.getrecursionlimit())
+		if (nativeRecursionLimit != tState.getSystemState().getrecursionlimit())
 		{
-			nativeRecursionLimit = tState.systemState.getrecursionlimit();
+			nativeRecursionLimit = tState.getSystemState().getrecursionlimit();
 			JyNI.setNativeRecursionLimit(nativeRecursionLimit);
 		}
-		
+
 		if (ts.nativeCallDepth != tState.call_depth) {
 			ts.nativeCallDepth = tState.call_depth;
 			JyNI.setNativeCallDepth(ts.nativeHandle, ts.nativeCallDepth);

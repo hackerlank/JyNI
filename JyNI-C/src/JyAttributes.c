@@ -1,10 +1,13 @@
 /*
- * Copyright of Python and Jython:
- * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- * 2011, 2012, 2013, 2014, 2015 Python Software Foundation.  All rights reserved.
- *
  * Copyright of JyNI:
- * Copyright (c) 2013, 2014, 2015 Stefan Richthofer.  All rights reserved.
+ * Copyright (c) 2013, 2014, 2015, 2016 Stefan Richthofer.
+ * All rights reserved.
+ *
+ *
+ * Copyright of Python and Jython:
+ * Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ * 2010, 2011, 2012, 2013, 2014, 2015, 2016 Python Software Foundation.
+ * All rights reserved.
  *
  *
  * This file is part of JyNI.
@@ -31,22 +34,26 @@
  */
 #include <JyNI.h>
 
-const char* JyAttributePyChecksum = "pyCs";
-const char* JyAttributeJyChecksum = "jyCs";
-const char* JyAttributeSyncFunctions = "sync";
-const char* JyAttributeModuleFile = "modf";
-const char* JyAttributeModuleName = "modn";
-const char* JyAttributeTypeName = "typn";
+const char* JyAttributePyChecksum     = "pyCs";
+const char* JyAttributeJyChecksum     = "jyCs";
+const char* JyAttributeSyncFunctions  = "sync";
+const char* JyAttributeModuleFile     = "modf";
+const char* JyAttributeModuleName     = "modn";
+const char* JyAttributeTypeName       = "typn";
+const char* JyAttributeMethodName     = "metn";
+const char* JyAttributeMethodDoc      = "mdoc";
+const char* JyAttributeMethodDef      = "mdef";
 const char* JyAttributeStringInterned = "strI";
-const char* JyAttributeSetEntry = "setE";
-const char* JyAttributeJyGCHead = "jyGC";
-const char* JyAttributeJyGCRefTmp = "gcrf";
-const char* JyAttributeWeakRefCount = "wrct";
+const char* JyAttributeSetEntry       = "setE";
+const char* JyAttributeJyGCHead       = "jyGC";
+const char* JyAttributeJyGCRefTmp     = "gcrf";
+const char* JyAttributeWeakRefCount   = "wrct";
+//const char* JyAttributeSubDelegFlags  = "sdlr";
 
 //defaults to 0; note that on alloc this value is added to the anyway allocated size sizeof(PyObjectHead)
 //const char* JyAttributeTruncateSize = "trSi";
 
-inline void JyNI_ClearJyAttributes(JyObject* obj)
+inline void _JyNI_ClearJyAttributes(JyObject* obj)
 {
 	JyAttribute* nxt = obj->attr;
 	while (nxt != NULL)
@@ -93,10 +100,10 @@ inline void JyNI_ClearJyAttributeValue(JyAttribute* att)
 inline void JyNI_ClearJyAttribute(JyObject* obj, const char* name)
 {
 	JyAttribute* nxt = obj->attr;
-	while (nxt != NULL)
+	while (nxt)
 	{
 		JyAttribute* nxt2 = nxt->next;
-		if (nxt2 != NULL && nxt2->name == name)
+		if (nxt2 && nxt2->name == name)
 		{
 			nxt->next = nxt2->next;
 			//if ((nxt2->flags & JY_ATTR_OWNS_VALUE_FLAG_MASK) && (nxt2->value))
@@ -109,25 +116,38 @@ inline void JyNI_ClearJyAttribute(JyObject* obj, const char* name)
 }
 
 //No hashing is done, since use of JyAttributes is expected to be rare.
-inline void* JyNI_GetJyAttribute(JyObject* obj, const char* name)
+inline void* _JyNI_GetJyAttribute(JyObject* obj, const char* name)
 {
+//	jputs(__FUNCTION__);
+//	jputs(name);
+//	jputs(FROM_JY(obj)->ob_type->tp_name);
+//	jputsLong(__LINE__);
 	JyAttribute* nxt = obj->attr;
 	while (nxt != NULL)
 	{
-		if (nxt->name == name)
+//		jputsLong(__LINE__);
+//		jputs(nxt->name);
+		if (nxt->name == name) {
+//			jputsLong(__LINE__);
 			return nxt->value;
+		}
 		else
 			nxt = nxt->next;
 	}
+//	jputsLong(__LINE__);
 	return NULL;
 }
 
 //No hashing is done, since use of JyAttributes is expected to be rare.
 inline jboolean JyNI_HasJyAttribute(JyObject* obj, const char* name)
 {
+//	jputs(__FUNCTION__);
+//	jputs(name);
 	JyAttribute* nxt = obj->attr;
-	while (nxt != NULL)
+	while (nxt)
 	{
+//		if (!nxt->name) jputs("JyNI_HasJyAttribute discovered NULL-name!");
+//		jputs(nxt->name);
 		if (nxt->name == name)
 			return JNI_TRUE;
 		else
@@ -141,6 +161,7 @@ inline jboolean JyNI_HasJyAttribute(JyObject* obj, const char* name)
 //it. If it was already present, the caller would not add it anyway.
 inline void JyNI_AddJyAttribute(JyObject* obj, const char* name, void* value)
 {
+//	if (!name) jputs("JyNI_AddJyAttribute NULL name");
 	JyAttribute* nat = malloc(sizeof(JyAttribute));
 	nat->name = name;
 	nat->value = value;
@@ -151,6 +172,7 @@ inline void JyNI_AddJyAttribute(JyObject* obj, const char* name, void* value)
 
 inline void JyNI_AddJyAttributeWithFlags(JyObject* obj, const char* name, void* value, char flags)
 {
+//	if (!name) jputs("JyNI_AddJyAttributeWithFlags NULL name");
 	JyAttribute* nat = malloc(sizeof(JyAttribute));
 	nat->name = name;
 	nat->value = value;
